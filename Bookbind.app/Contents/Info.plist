@@ -5,13 +5,19 @@
 	<key>CFBundleName</key><string>Bookbind</string>
 	<key>CFBundleDisplayName</key><string>Bookbind</string>
 	<key>CFBundleIdentifier</key><string>local.morad.bookbind</string>
-	<key>CFBundleExecutable</key><string>launcher</string>
+	<key>CFBundleExecutable</key><string>Bookbind</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.1.0</string>
-	<key>CFBundleVersion</key><string>2</string>
+	<key>CFBundleShortVersionString</key><string>1.2.0</string>
+	<key>CFBundleVersion</key><string>3</string>
 	<key>LSMinimumSystemVersion</key><string>11.0</string>
 	<key>NSHighResolutionCapable</key><true/>
 	<key>NSHumanReadableCopyright</key><string>Local tool. Merges loose audio files into one chaptered .m4b.</string>
+	<!-- The window is a web view pointed at the server on loopback, so the app has to
+	     be allowed to load plain http from home. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key><true/>
+	</dict>
 </dict>
 </plist>
