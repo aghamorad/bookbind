@@ -7,6 +7,7 @@ click. Run with:  python3 app.py
 """
 import json
 import os
+import plistlib
 import queue
 import re
 import shutil
@@ -23,6 +24,33 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 PORT = 8765
 ORIG = "_originals"
+REPO = "aghamorad/bookbind"
+
+# What a bare checkout reports. A released .app carries an Info.plist and that
+# number wins, because it is the one this copy was actually cut at.
+VERSION = "1.1.0"
+
+
+def version():
+    """The version of the copy that is running, and never a guess.
+
+    The bundle's Info.plist is the authority, and it sits in a different place
+    depending on how this copy was put together: above the server inside a
+    self-contained build (the server is copied into `Contents/Resources`),
+    beside it in a release, and inside the .app in a checkout. A copy with no
+    plist anywhere is the bare source, and the constant above is its answer.
+    """
+    for candidate in (os.path.join(HERE, os.pardir, "Info.plist"),
+                      os.path.join(HERE, "Info.plist"),
+                      os.path.join(HERE, "Bookbind.app", "Contents", "Info.plist")):
+        try:
+            with open(candidate, "rb") as fh:
+                found = plistlib.load(fh).get("CFBundleShortVersionString")
+        except Exception:
+            continue
+        if found and str(found).strip():
+            return str(found).strip()
+    return VERSION
 
 AUDIO_EXT = {".mp3", ".m4a", ".m4b", ".aac", ".flac", ".opus", ".wav", ".ogg", ".wma"}
 AAC_EXT = {".m4a", ".m4b", ".aac"}
@@ -575,6 +603,9 @@ class Handler(BaseHTTPRequestHandler):
                 with open(p, "rb") as fh:
                     return self._send(200, fh.read(), ct)
             return self._send(404, {"error": "not found"})
+
+        if u.path == "/api/version":
+            return self._send(200, {"version": version(), "repo": REPO})
 
         if u.path == "/api/home":
             return self._send(200, {"home": os.path.expanduser("~"),
