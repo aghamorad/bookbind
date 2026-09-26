@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  macos-app:
+  lightweight:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,21 +50,23 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           cat > /tmp/notes.md <<'EOF'
-          One download, nothing to install. Unzip it, put `Bookbind.app` wherever you like,
-          and double-click it — the server, the page and the icon all live inside the bundle.
+          Two builds, same app. Take whichever suits the machine.
+
+          **`-macos.zip`** — 2 MB, starts instantly. Needs Python and ffmpeg installed:
+
+              brew install python3 ffmpeg
+              python3 -m pip install mutagen
+
+          **`-macos-intel.zip`** — around 100 MB, installs nothing. Python and ffmpeg are
+          inside it, built for Intel Macs.
+
+          Either way: unzip, put `Bookbind.app` wherever you like, and double-click it.
 
           **First launch.** The app is not signed or notarized, so macOS refuses a plain
           double-click. Right-click `Bookbind.app` → **Open** → **Open**. After that it
           launches normally.
 
-          **Requirements.** It still shells out to Python and ffmpeg:
-
-              brew install python3 ffmpeg
-              python3 -m pip install mutagen
-
-          If one of those is missing, the app names it and prints the command to fix it.
-          Nothing in the bundle is architecture-specific — the same zip runs on Intel and
-          Apple Silicon.
+          If something is missing, the app names it and prints the command to fix it.
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip --clobber
@@ -74,3 +76,112 @@ jobs:
               --notes-file /tmp/notes.md
           fi
           gh release view "$TAG" --json isDraft,tagName,assets
+
+  bundled:
+    needs: lightweight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Homebrew's ffmpeg is wired to nineteen dylibs in /opt/homebrew, so shipping it
+      # would ship a broken app. evermeet's builds are static — the assertions below are
+      # the whole point of this step, not decoration.
+      - name: Fetch a static ffmpeg
+        run: |
+          mkdir -p /tmp/ff
+          curl -fsSL -o /tmp/ffmpeg.zip  https://evermeet.cx/ffmpeg/getrelease/zip
+          curl -fsSL -o /tmp/ffprobe.zip https://evermeet.cx/ffprobe/getrelease/zip
+          unzip -q /tmp/ffmpeg.zip  -d /tmp/ff
+          unzip -q /tmp/ffprobe.zip -d /tmp/ff
+          chmod +x /tmp/ff/ffmpeg /tmp/ff/ffprobe
+          for b in /tmp/ff/ffmpeg /tmp/ff/ffprobe; do
+            echo "== $b"
+            otool -L "$b" | sed -n '2,4p'
+            ! otool -L "$b" | grep -qE '/usr/local/|/opt/homebrew/'
+            file "$b"
+          done
+
+      # --add-data puts static/ inside the frozen bundle, which is where the server
+      # looks for it once app.py is no longer a file on disk.
+      - name: Freeze the server and its interpreter
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet --upgrade pip pyinstaller mutagen
+          /tmp/venv/bin/python -m PyInstaller --onedir --noconfirm --log-level WARN \
+            --name BookbindServer --add-data "static:static" app.py
+          du -sh dist/BookbindServer
+
+      - name: Stage the bundle
+        run: |
+          RES=Bookbind.app/Contents/Resources
+          mkdir -p "$RES/bin"
+          cp -R dist/BookbindServer/. "$RES/bin/"
+          cp /tmp/ff/ffmpeg /tmp/ff/ffprobe "$RES/bin/"
+          chmod +x "$RES/bin/ffmpeg" "$RES/bin/ffprobe" Bookbind.app/Contents/MacOS/launcher
+          file "$RES/bin/BookbindServer"
+          du -sh Bookbind.app
+
+      - name: Package
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          mkdir -p out
+          zip -r -X "out/Bookbind-${TAG#v}-macos-${{ matrix.arch }}.zip" Bookbind.app
+
+      # The only check that matters: run the thing a downloader ends up with, on a PATH
+      # that has no Homebrew in it, and make it merge a real book.
+      - name: Run the extracted app with nothing installed
+        run: |
+          unzip -q out/*.zip -d /tmp/out
+          APP=/tmp/out/Bookbind.app
+          RES="$APP/Contents/Resources"
+          test -x "$APP/Contents/MacOS/launcher"
+          test -x "$RES/bin/BookbindServer"
+          test -x "$RES/bin/ffmpeg"
+          test -f "$RES/bin/_internal/static/index.html"
+
+          mkdir -p /tmp/fix
+          for i in 1 2 3; do
+            "$RES/bin/ffmpeg" -v error -y -f lavfi -i "sine=frequency=$((300*i)):duration=3" \
+              -c:a libmp3lame -b:a 96k -metadata track="$i" -metadata artist="CI" /tmp/fix/0$i.mp3
+          done
+
+          env -i PATH="$RES/bin:/usr/bin:/bin" HOME="$HOME" "$RES/bin/BookbindServer" \
+            >/tmp/server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -s -o /dev/null --max-time 1 http://127.0.0.1:8765/api/home && break
+            sleep 0.5
+          done
+          curl -s http://127.0.0.1:8765/ | grep -q "Made by Morad"
+
+          curl -s -X POST http://127.0.0.1:8765/api/start -H 'Content-Type: application/json' \
+            -d '{"folder":"/tmp/fix","author":"CI","title":"Smoke Test","year":"2026","bitrate":""}' \
+            >/tmp/start.json
+          ID=$(python3 -c "import json;print(json.load(open('/tmp/start.json'))['job']['id'])")
+          for i in $(seq 1 90); do
+            STATE=$(curl -s http://127.0.0.1:8765/api/jobs | python3 -c "
+          import json,sys
+          j=[x for x in json.load(sys.stdin)['jobs'] if x['id']=='$ID'][0]
+          print(j['state']); [print('  ',c['name'],c['ok'],c['detail'],file=sys.stderr) for c in j['checks']]")
+            echo "state: $STATE"
+            case "$STATE" in done|failed|cancelled) break;; esac
+            sleep 1
+          done
+          test "$STATE" = done
+          ls -l /tmp/fix
+          kill %1
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release upload "$TAG" out/*.zip --clobber
+          gh release view "$TAG" --json assets -q '.assets[] | "\(.name) \(.size)"'
