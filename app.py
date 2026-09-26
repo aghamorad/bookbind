@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Bookbind -- merge a folder of loose audio files into one chaptered .m4b.
 
-Local web app. Nothing is ever deleted: originals are moved into an `_originals`
-subfolder only after the output passes verification, and can be restored with one
-click. Run with:  python3 app.py
+This is the whole program apart from its window. The .app starts it and points a
+web view at it; run it by hand and any browser will do. Nothing is ever deleted:
+originals are moved into an `_originals` subfolder only after the output passes
+verification, and can be restored with one click. Run with:  python3 app.py
 """
 import json
 import os
@@ -22,13 +23,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
-PORT = 8765
+PORT = int(os.environ.get("BOOKBIND_PORT") or 8765)
 ORIG = "_originals"
 REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 def version():
@@ -126,6 +127,17 @@ def first_tag(fp, key):
     return str(v).strip()
 
 
+def file_row(path, base=None):
+    """One line of the file list: what the page needs to show a track and let
+    somebody reorder it. `base` is the folder it is displayed relative to."""
+    secs = duration(path) or 0.0
+    return {"path": path,
+            "rel": os.path.relpath(path, base) if base else os.path.basename(path),
+            "name": os.path.basename(path), "secs": round(secs, 2),
+            "size": os.path.getsize(path), "title": first_tag(path, "title") or "",
+            "track": first_tag(path, "tracknumber") or ""}
+
+
 # ------------------------------------------------------------- catalogue lookup
 
 def itunes_search(author, title, limit=12):
@@ -173,13 +185,40 @@ def fetch_cover(url, dest):
 
 # ------------------------------------------------------------------ build steps
 
+def inside(path, folder):
+    return os.path.commonpath([os.path.abspath(path), os.path.abspath(folder)]) \
+        == os.path.abspath(folder)
+
+
 def build_plan(folder, author, title, year, narrator, cover_path, order_method="auto",
-               bitrate_kbps=None):
-    """Everything the encoder needs, or an error string explaining what is wrong."""
-    folder = os.path.abspath(os.path.expanduser(folder))
+               bitrate_kbps=None, files=None, titles=None):
+    """Everything the encoder needs, or an error string explaining what is wrong.
+
+    Hand it `files` and those are the sources, in that order, whatever order they
+    were given in -- the page lets a track be dropped or the chapters resequenced.
+    Leave them out and the folder is scanned instead, which is what asking for a
+    folder on its own does.
+    """
+    chosen = [os.path.abspath(os.path.expanduser(f)) for f in (files or [])]
+    titles = {os.path.abspath(os.path.expanduser(k)): v.strip()
+              for k, v in (titles or {}).items() if (v or "").strip()}
+
+    folder = os.path.abspath(os.path.expanduser(folder)) if folder else ""
+    if chosen and not folder:
+        # Nobody named a folder, so it is whatever holds the files -- that is where
+        # the book goes and where the originals are moved to. Files gathered off
+        # several volumes have no such folder, and merging across them is not
+        # something to guess at.
+        folder = os.path.commonpath([os.path.dirname(f) for f in chosen])
+        if folder == os.path.sep:
+            return None, "those files are not all in one folder -- choose the folder first"
     if not os.path.isdir(folder):
         return None, "that folder does not exist"
-    files = scan_audio(folder)
+
+    gone = [os.path.basename(f) for f in chosen if not os.path.isfile(f)]
+    if gone:
+        return None, "these files are not there any more: " + ", ".join(gone[:4])
+    files = chosen or scan_audio(folder)
     if not files:
         return None, "no audio files in that folder"
 
@@ -214,7 +253,8 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
         return None, ("these files could not be read: " + ", ".join(bad[:4])
                       + (f" (+{len(bad)-4} more)" if len(bad) > 4 else ""))
 
-    ordered, how = order_files(files, folder, order_method)
+    ordered, how = (chosen, "you chose") if chosen else order_files(files, folder, order_method)
+    ordered = [f for f in ordered if os.path.abspath(f) != os.path.abspath(out)]
 
     lossless = exts <= AAC_EXT and len(params) == 1
     br = None
@@ -246,7 +286,7 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
     return dict(folder=folder, files=ordered, out=out, out_name=out_name,
                 total_secs=total, lossless=lossless, bitrate=br, order=how,
                 author=author, title=title, year=str(year or ""),
-                narrator=narrator or "", cover=cover_path,
+                narrator=narrator or "", cover=cover_path, titles=titles,
                 n=len(ordered), est_bytes=int(need)), None
 
 
@@ -285,8 +325,12 @@ def write_chapters(plan, path):
     cur = 0.0
     for i, f in enumerate(plan["files"], 1):
         d = duration(f) or 0.0
-        label = os.path.splitext(os.path.basename(f))[0]
-        label = re.sub(r"^\s*\d{1,3}\s*[-_.)\]]\s*", "", label).strip() or label
+        # a title typed against this file wins; otherwise the file's own tag would
+        # have to have been right in the first place, so the name is the next best
+        label = plan.get("titles", {}).get(os.path.abspath(f))
+        if not label:
+            label = os.path.splitext(os.path.basename(f))[0]
+            label = re.sub(r"^\s*\d{1,3}\s*[-_.)\]]\s*", "", label).strip() or label
         meta += ["[CHAPTER]", "TIMEBASE=1/1000",
                  f"START={int(cur * 1000)}", f"END={int((cur + d) * 1000)}",
                  f"title={label}"]
@@ -416,7 +460,14 @@ def move_originals(plan):
     mapping = []
     for f in plan["files"]:
         rel = os.path.relpath(f, plan["folder"])
-        target = os.path.join(dest, rel)
+        if rel.startswith(os.pardir):
+            # A file added from outside the folder: `../` would walk straight back
+            # out of _originals, so it is stored in a corner of its own by name.
+            # `rel` is kept for the manifest, which puts it back where it came from.
+            inside = os.path.join("elsewhere", os.path.basename(f))
+        else:
+            inside = rel
+        target = os.path.join(dest, inside)
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if os.path.exists(target):
             stem, ext = os.path.splitext(target)
@@ -559,8 +610,12 @@ def restore(job_id):
     if os.path.exists(out):
         os.remove(out)
     d = os.path.join(base, ORIG)
-    if os.path.isdir(d) and not os.listdir(d):
-        os.rmdir(d)
+    if os.path.isdir(d):
+        for dp, _, _ in os.walk(d, topdown=False):
+            try:
+                os.rmdir(dp)
+            except OSError:
+                pass
     os.remove(job.manifest)
     return True, f"{back} files restored"
 
@@ -571,7 +626,7 @@ def jsonable(job):
     return {"id": job.id, "state": job.state, "pct": round(job.pct, 1),
             "note": job.note, "log": job.log[-40:], "checks": job.checks,
             "name": job.plan["out_name"], "folder": job.plan["folder"],
-            "n": job.plan["n"], "hours": round(job.plan["total_secs"] / 3600, 2),
+            "n": job.plan["n"], "secs": job.plan["total_secs"],
             "elapsed": round((job.t1 or time.time()) - job.t0, 1) if job.t0 else 0}
 
 
@@ -617,7 +672,7 @@ class Handler(BaseHTTPRequestHandler):
             path = os.path.abspath(os.path.expanduser(path))
             if not os.path.isdir(path):
                 return self._send(400, {"error": "not a folder"})
-            dirs, audio = [], 0
+            dirs, files, audio = [], [], 0
             try:
                 for name in sorted(os.listdir(path), key=natkey):
                     if name.startswith("."):
@@ -627,10 +682,13 @@ class Handler(BaseHTTPRequestHandler):
                         dirs.append({"name": name, "path": full})
                     elif os.path.splitext(name)[1].lower() in AUDIO_EXT:
                         audio += 1
+                        if os.path.splitext(name)[1].lower() not in SKIP_EXT:
+                            files.append({"name": name, "path": full})
             except PermissionError:
                 return self._send(403, {"error": "no permission for that folder"})
             parent = os.path.dirname(path)
-            return self._send(200, {"path": path, "dirs": dirs, "audio": audio,
+            return self._send(200, {"path": path, "dirs": dirs, "files": files,
+                                    "audio": audio,
                                     "parent": parent if parent != path else None})
 
         if u.path == "/api/scan":
@@ -638,16 +696,45 @@ class Handler(BaseHTTPRequestHandler):
             folder = os.path.abspath(os.path.expanduser(folder))
             if not os.path.isdir(folder):
                 return self._send(400, {"error": "that folder does not exist"})
-            files = scan_audio(folder)
-            files = [f for f in files if os.path.splitext(f)[1].lower() not in SKIP_EXT]
-            total = sum((duration(f) or 0) for f in files)
-            tagged = sum(1 for f in files if first_tag(f, "tracknumber"))
+            # An .m4b sitting in the folder is a book, not a chapter of one -- either
+            # an earlier run of this or something already finished. Never a source;
+            # it gets named below the list instead. (Adding one by hand still works.)
+            here = [f for f in scan_audio(folder)
+                    if os.path.splitext(f)[1].lower() not in SKIP_EXT]
+            already = [os.path.relpath(f, folder) for f in here
+                       if os.path.splitext(f)[1].lower() == ".m4b"]
+            files = [f for f in here if os.path.splitext(f)[1].lower() != ".m4b"]
+            rows = [file_row(f, folder) for f in files]
+            total = sum(r["secs"] for r in rows)
+            tagged = sum(1 for r in rows if r["track"])
             return self._send(200, {
-                "path": folder, "count": len(files), "hours": round(total / 3600, 2),
-                "tagged": tagged, "size": sum(os.path.getsize(f) for f in files),
-                "sample": [os.path.relpath(f, folder) for f in files[:6]],
+                "path": folder, "count": len(rows), "secs": total,
+                "tagged": tagged, "size": sum(r["size"] for r in rows),
+                "files": rows,
+                "sample": [r["rel"] for r in rows[:6]],
                 "orig": os.path.isdir(os.path.join(folder, ORIG)),
-                "already": [f for f in os.listdir(folder) if f.endswith(".m4b")]})
+                "already": already})
+
+        if u.path == "/api/look":
+            # Describe loose files -- the ones added by hand from somewhere else, so
+            # the list can show a length and a title for them like any other.
+            paths = [p for p in (q.get("path") or [])
+                     if os.path.isfile(p) and os.path.splitext(p)[1].lower() in AUDIO_EXT]
+            if not paths:
+                return self._send(400, {"error": "no audio files in that"})
+            return self._send(200, {"files": [file_row(p) for p in paths]})
+
+        if u.path == "/api/where":
+            # Loose files with no folder chosen yet: the folder Bookbind would use is
+            # the one that holds them all, and this is how the page finds that out
+            # without guessing at it in JavaScript.
+            paths = [p for p in (q.get("path") or []) if os.path.isfile(p)]
+            if len(paths) == 1:
+                return self._send(200, {"folder": os.path.dirname(paths[0])})
+            if not paths:
+                return self._send(400, {"error": "no such files"})
+            return self._send(200, {"folder": os.path.commonpath(
+                [os.path.dirname(p) for p in paths])})
 
         if u.path == "/api/search":
             try:
@@ -676,7 +763,8 @@ class Handler(BaseHTTPRequestHandler):
                 body.get("folder", ""), body.get("author", "").strip(),
                 body.get("title", "").strip(), body.get("year", "").strip(),
                 body.get("narrator", "").strip(), body.get("cover") or None,
-                body.get("order", "auto"), body.get("bitrate"))
+                body.get("order", "auto"), body.get("bitrate"),
+                body.get("files"), body.get("titles"))
             if err:
                 return self._send(400, {"error": err})
             job = Job(plan)
@@ -700,16 +788,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200 if ok else 400, {"ok": ok, "message": msg})
 
         if u.path == "/api/reveal":
-            folder = body.get("folder", "")
-            if os.path.isdir(folder):
-                subprocess.Popen(["open", folder])
+            # Folder or file -- `open -R` shows the file selected inside its folder,
+            # which is what "show me that one" means for a single track.
+            target = body.get("folder") or body.get("path") or ""
+            if os.path.isdir(target):
+                subprocess.Popen(["open", target])
+                return self._send(200, {"ok": True})
+            if os.path.isfile(target):
+                subprocess.Popen(["open", "-R", target])
                 return self._send(200, {"ok": True})
             return self._send(400, {"error": "no such folder"})
 
         return self._send(404, {"error": "not found"})
 
 
+def follow_parent():
+    """Quit when the app that launched us does.
+
+    The app passes its own pid in BOOKBIND_PARENT. Without this, force-quitting the
+    app leaves this server running, and the next launch finds the port already
+    answered and quietly reuses the old one -- so an updated app talks to the code
+    from before the update. Only set when the app starts us, so running this by
+    hand keeps behaving like any other server.
+    """
+    pid = os.environ.get("BOOKBIND_PARENT")
+    if not (pid and pid.isdigit()):
+        return
+    while True:
+        time.sleep(1)
+        if os.getppid() != int(pid):
+            os._exit(0)
+
+
 if __name__ == "__main__":
+    threading.Thread(target=follow_parent, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"Bookbind -> http://127.0.0.1:{PORT}   (ctrl-c to stop)")
     try:

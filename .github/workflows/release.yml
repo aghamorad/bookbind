@@ -27,7 +27,7 @@ jobs:
           RES=Bookbind.app/Contents/Resources
           cp app.py "$RES/"
           cp -R static "$RES/"
-          chmod +x Bookbind.app/Contents/MacOS/launcher
+          chmod +x Bookbind.app/Contents/MacOS/Bookbind
 
       - name: Package
         run: |
@@ -38,10 +38,25 @@ jobs:
       - name: Check the artifact as a downloader receives it
         run: |
           unzip -q dist/*.zip -d /tmp/out
-          test -x /tmp/out/Bookbind.app/Contents/MacOS/launcher
+          test -x /tmp/out/Bookbind.app/Contents/MacOS/Bookbind
           test -f /tmp/out/Bookbind.app/Contents/Resources/app.py
           test -f /tmp/out/Bookbind.app/Contents/Resources/static/index.html
+          test -f /tmp/out/Bookbind.app/Contents/Resources/AppIcon.icns
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/app.py').read())"
+          # This runner has no lipo, so read the fat header directly. A window binary
+          # that is one architecture opens on half the Macs and not on the others.
+          python3 - <<'PY'
+          import struct
+          p = "/tmp/out/Bookbind.app/Contents/MacOS/Bookbind"
+          b = open(p, "rb").read(4096)
+          assert b[:4] == b"\xca\xfe\xba\xbe", "not a universal binary: " + b[:4].hex()
+          n = struct.unpack(">I", b[4:8])[0]
+          cpus = {struct.unpack(">I", b[8 + 20 * i:12 + 20 * i])[0] for i in range(n)}
+          want = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+          got = {want[c] for c in cpus if c in want}
+          assert got == {"x86_64", "arm64"}, f"architectures are {got or cpus}"
+          print("universal:", sorted(got))
+          PY
           find /tmp/out -type f | sort
 
       - name: Publish the release
@@ -50,7 +65,32 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           cat > /tmp/notes.md <<'EOF'
-          Three builds, same app. Take whichever suits the machine.
+          ## It is a real Mac app now
+
+          Bookbind used to open a browser tab, and you picked the folder by typing a path
+          into a box. Both are gone. It is a proper app: its own window, its own Dock
+          icon, and no address bar anywhere.
+
+          - **Choose folder** opens a Finder panel. **Add files** opens the same panel for
+            individual tracks. Nothing is browsed by hand any more.
+          - There are now **two lists**. *The folder* is the usual way — one folder, in
+            order. *The chapters* is the actual list of files that will become chapters,
+            and each row can be changed on its own: untick one to leave it out, move one
+            with the arrows, drop one with **×**, or type in its box to give that chapter
+            your own title.
+          - That second list is what you use when you found a track list online: type each
+            chapter's real name, put them in order, leave out the interviews, and the book
+            comes out named the way the publisher did it.
+          - A running job now stays in view while you read the rest of the page, instead of
+            scrolling away.
+
+          Nothing else changed. It still copies the audio rather than re-recording it, it
+          still checks its own work before touching your originals, and it still never
+          deletes anything.
+
+          ## Which build to take
+
+          Three builds of the same app. Take whichever suits the machine.
 
           **`-macos.zip`** — 2 MB, starts instantly. Needs Python and ffmpeg installed:
 
@@ -148,8 +188,9 @@ jobs:
           mkdir -p "$RES/bin"
           cp -R dist/BookbindServer/. "$RES/bin/"
           cp /tmp/ff/ffmpeg /tmp/ff/ffprobe "$RES/bin/"
-          chmod +x "$RES/bin/ffmpeg" "$RES/bin/ffprobe" Bookbind.app/Contents/MacOS/launcher
+          chmod +x "$RES/bin/ffmpeg" "$RES/bin/ffprobe" Bookbind.app/Contents/MacOS/Bookbind
           file "$RES/bin/BookbindServer"
+          lipo -archs Bookbind.app/Contents/MacOS/Bookbind
           du -sh Bookbind.app
 
       - name: Package
@@ -165,10 +206,16 @@ jobs:
           unzip -q out/*.zip -d /tmp/out
           APP=/tmp/out/Bookbind.app
           RES="$APP/Contents/Resources"
-          test -x "$APP/Contents/MacOS/launcher"
+          test -x "$APP/Contents/MacOS/Bookbind"
           test -x "$RES/bin/BookbindServer"
           test -x "$RES/bin/ffmpeg"
           test -f "$RES/bin/_internal/static/index.html"
+          test -f "/tmp/out/Bookbind.app/Contents/Resources/AppIcon.icns"
+          # The window itself must know both architectures, or the copy in the zip
+          # opens on one kind of Mac and refuses on the other.
+          lipo -archs "$APP/Contents/MacOS/Bookbind" | grep -q arm64
+          lipo -archs "$APP/Contents/MacOS/Bookbind" | grep -q x86_64
+          ! otool -L "$APP/Contents/MacOS/Bookbind" | grep -qE '/usr/local/|/opt/homebrew/'
           file "$RES/bin/BookbindServer" "$RES/bin/ffmpeg" | grep -c "${{ matrix.want }}" \
             | grep -q '^2$' || { file "$RES/bin/BookbindServer" "$RES/bin/ffmpeg"; exit 1; }
 
