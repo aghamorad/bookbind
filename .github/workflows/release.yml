@@ -50,15 +50,16 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           cat > /tmp/notes.md <<'EOF'
-          Two builds, same app. Take whichever suits the machine.
+          Three builds, same app. Take whichever suits the machine.
 
           **`-macos.zip`** — 2 MB, starts instantly. Needs Python and ffmpeg installed:
 
               brew install python3 ffmpeg
               python3 -m pip install mutagen
 
-          **`-macos-intel.zip`** — around 100 MB, installs nothing. Python and ffmpeg are
-          inside it, built for Intel Macs.
+          **`-macos-silicon.zip`** — M-series Macs. **`-macos-intel.zip`** — everything
+          older. Both are around 70–100 MB and install nothing: Python and ffmpeg are
+          inside them, built for that architecture.
 
           Either way: unzip, put `Bookbind.app` wherever you like, and double-click it.
 
@@ -83,8 +84,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Each of these sites builds for one architecture only, so the rows cannot
+          # share a URL. `want` is checked against the downloaded binaries, because a
+          # wrong URL here tends to serve a valid binary rather than 404.
           - runner: macos-15-intel
             arch: intel
+            want: x86_64
+            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
+            ffprobe_url: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          - runner: macos-15
+            arch: silicon
+            want: arm64
+            ffmpeg_url: https://www.osxexperts.net/ffmpeg9arm.zip
+            ffprobe_url: https://www.osxexperts.net/ffprobe9arm.zip
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -100,8 +112,8 @@ jobs:
           # The two endpoints differ by one path segment, and the wrong one does not
           # 404 -- it quietly serves ffmpeg again, so the copy below would fail with a
           # confusing "no such file" instead of a bad URL.
-          curl -fsSL -o /tmp/ffmpeg.zip  https://evermeet.cx/ffmpeg/getrelease/zip
-          curl -fsSL -o /tmp/ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          curl -fsSL -o /tmp/ffmpeg.zip  "${{ matrix.ffmpeg_url }}"
+          curl -fsSL -o /tmp/ffprobe.zip "${{ matrix.ffprobe_url }}"
           # Unpacked into separate directories so identical filenames cannot collide.
           unzip -qo /tmp/ffmpeg.zip  -d /tmp/z1
           unzip -qo /tmp/ffprobe.zip -d /tmp/z2
@@ -111,6 +123,9 @@ jobs:
           chmod +x /tmp/ff/ffmpeg /tmp/ff/ffprobe
           for b in /tmp/ff/ffmpeg /tmp/ff/ffprobe; do
             echo "== $b"
+            if ! file "$b" | grep -q "${{ matrix.want }}"; then
+              echo "not ${{ matrix.want }}:"; file "$b"; exit 1
+            fi
             otool -L "$b" | sed -n '2,4p'
             ! otool -L "$b" | grep -qE '/usr/local/|/opt/homebrew/'
             file "$b"
@@ -153,6 +168,8 @@ jobs:
           test -x "$RES/bin/BookbindServer"
           test -x "$RES/bin/ffmpeg"
           test -f "$RES/bin/_internal/static/index.html"
+          file "$RES/bin/BookbindServer" "$RES/bin/ffmpeg" | grep -c "${{ matrix.want }}" \
+            | grep -q '^2$' || { file "$RES/bin/BookbindServer" "$RES/bin/ffmpeg"; exit 1; }
 
           mkdir -p /tmp/fix
           for i in 1 2 3; do

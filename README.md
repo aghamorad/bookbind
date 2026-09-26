@@ -1,22 +1,56 @@
 # Bookbind
 
-Point it at a folder of loose audio files — a book ripped into twelve mp3s, say — and it
-merges them into one chaptered `.m4b`, checks the result, then moves the originals into
-`_originals/`. It never deletes anything.
+An audiobook is normally **one file**. A copy of one is often **a pile of files** — one per
+CD track, or one per chapter, sitting in a folder with names like `01.mp3`, `02.mp3`.
+
+Bookbind turns that pile into a single `.m4b`: the file type Apple Books, iPhones, iPods
+and most audiobook players understand, with a real chapter list you can skip around in.
+It checks its own work as it goes, and it never deletes anything.
+
+You do not need to know what an `.m4b` is, or what "chapter list" means technically. Point
+it at the folder, press the button, and you get one book.
+
+## What it does, step by step
+
+1. **Look.** You hand it a folder. It tells you what audio it found there, how long it
+   runs in total, how many files already have tags, and guesses the author and title from
+   the folder's name.
+2. **Ask.** Type the author and title and it looks the book up online (iTunes). You get
+   back the release year, the narrator, and a cover picture. Pick the right edition and the
+   boxes fill themselves in — and every box stays editable, including "no cover at all".
+3. **Bind.** It joins the files into one `.m4b`, with one chapter per source file, in the
+   order the files should play (it understands that `2.mp3` comes before `10.mp3`, not
+   after). By default it **copies** the audio rather than re-recording it, so the sound is
+   exactly what you started with and cannot get worse.
+4. **Check.** Before touching your originals it inspects the new file: is it the same
+   length, does it have one chapter per file, do the very first and very last seconds
+   actually play, did the tags land, is the cover really inside it. If any answer is wrong
+   it throws its own output away and tells you why. Your files stay put.
+5. **Tidy up.** The original files move into an `_originals` folder next to the new book —
+   moved, never deleted. If you don't like the result, one click (**Undo**) puts them all
+   back and removes the merged file.
+
+It accepts mp3, m4a, m4b, aac, flac, opus, wav, ogg and wma, and will mix formats within
+one book if it has to.
 
 ## Download
 
-Two builds, same app — take whichever suits the machine, from
-[Releases](https://github.com/aghamorad/bookbind/releases). Unzip either one and put
-`Bookbind.app` wherever you like.
+Three builds of the same app. Take whichever suits the machine, from
+[Releases](https://github.com/aghamorad/bookbind/releases). Unzip it and put
+`Bookbind.app` wherever you like — Applications, Desktop, anywhere.
 
-| Asset | Size | Needs |
-| --- | --- | --- |
-| `Bookbind-<version>-macos.zip` | ~2 MB | Python 3 with `mutagen`, and ffmpeg |
-| `Bookbind-<version>-macos-intel.zip` | ~100 MB | nothing — both are inside it |
+| Asset | Size | Macs it runs on | Needs |
+| --- | --- | --- | --- |
+| `Bookbind-<version>-macos-silicon.zip` | ~70 MB | M1, M2, M3, M4 … | nothing — everything is inside |
+| `Bookbind-<version>-macos-intel.zip` | ~72 MB | older Intel Macs | nothing — everything is inside |
+| `Bookbind-<version>-macos.zip` | ~2 MB | either | Python 3 with `mutagen`, and ffmpeg |
 
-The small one starts instantly and is not architecture-specific; the launcher is a shell
-script around a Python server, so the same zip runs on Intel and Apple Silicon.
+Not sure which Mac you have? Apple menu → **About This Mac**. If the chip says **Apple M…**
+take the *silicon* one; if it says **Intel** take the *intel* one.
+
+The two big ones already contain the Python and the ffmpeg they need — that is the whole
+point of them, and why they are large. The small one is for people who already have those
+installed (or would rather have them):
 
 ```bash
 brew install python3 ffmpeg
@@ -26,8 +60,7 @@ brew install python3 ffmpeg
 python3 -m pip install mutagen
 ```
 
-If one of those is missing the app names it and tells you the command. The large one is
-frozen with PyInstaller and carries a static ffmpeg, built for Intel Macs.
+If one of those is missing, the app tells you which and prints the command to fix it.
 
 **First launch.** The app is not signed or notarized, so macOS refuses a plain
 double-click. Right-click `Bookbind.app` → **Open** → **Open**. After that it launches
@@ -42,35 +75,14 @@ python3 app.py
 and open <http://127.0.0.1:8765>. Needs `python3`, `mutagen`, and `ffmpeg`/`ffprobe` on
 `PATH`.
 
-## What it does
-
-1. **Point it at a folder.** It lists the audio it found, with count, total running time
-   and how many files already carry tags, and takes a guess at the author and title from
-   the folder name.
-2. **Search for the metadata.** Author + Title hits the iTunes Search API, which returns
-   the audiobook release year, narrator and cover art. Pick a candidate and the fields
-   fill themselves; every field stays editable, and the cover can be dropped entirely.
-3. **Merge.** Lossless by default — the streams are copied, so nothing is re-encoded and
-   quality cannot regress. Accepts mp3, m4a, m4b, aac, flac, opus, wav, ogg and wma, and
-   will mix formats in one book if it has to. Chapters come from the track/disc tags when
-   every file carries a number, and from natural path order otherwise (`2.mp3` before
-   `10.mp3`), with the running time of each source file as its chapter length.
-4. **Verify.** Six checks run against the finished file before anything is touched:
-   duration in versus out, one chapter per source file, the first and last seconds
-   actually decode, the tags landed, and the cover art is really embedded. If any of them
-   disagrees with the plan, the output is discarded and the originals stay where they are.
-5. **Undo.** A manifest records every move. One click puts the originals back and removes
-   the merged file.
-
-Cover art is written as an `attached_pic` mjpeg stream, which is what Apple Books,
-iTunes and most players read. Chapters are written as MP4 chapter tracks — in these files
-they appear as a `bin_data` stream alongside the audio, which is normal.
-
 ## Notes
 
-- `build/make_icon.py` regenerates the app icon and the header png from a flat source
-  image on a solid page: it keys the page out, sizes the shape to Apple's icon grid
-  (824 of a 1024 canvas) and writes both the `.icns` and `static/icon.png`.
-- The server holds jobs in memory, so an Undo offered by a job that was running before
-  the app was restarted will report that the manifest is gone. The manifest file itself
-  is still on disk next to the book.
+- The server holds its jobs in memory, so an Undo offered by a job that was running before
+  you quit the app will say the manifest is gone. The manifest file itself is still on disk
+  next to the book, so nothing is lost.
+- `build/make_icon.py` regenerates the app icon and the header png from a flat source image
+  on a solid page: it keys the page out, sizes the shape to Apple's icon grid (824 of a
+  1024 canvas) and writes both the `.icns` and `static/icon.png`.
+- Cover art is written as an `attached_pic` mjpeg stream, which is what Apple Books, iTunes
+  and most players read. Chapters are written as MP4 chapter tracks — in these files they
+  appear as a `bin_data` stream alongside the audio, which is normal and not a problem.
