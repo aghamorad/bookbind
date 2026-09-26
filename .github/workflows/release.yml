@@ -66,6 +66,11 @@ jobs:
           Nothing in the bundle is architecture-specific — the same zip runs on Intel and
           Apple Silicon.
           EOF
-          gh release create "$TAG" dist/*.zip --title "Bookbind ${TAG#v}" \
-            --notes-file /tmp/notes.md --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+            gh release edit "$TAG" --notes-file /tmp/notes.md
+          else
+            gh release create "$TAG" dist/*.zip --title "Bookbind ${TAG#v}" \
+              --notes-file /tmp/notes.md
+          fi
           gh release view "$TAG" --json isDraft,tagName,assets
