@@ -4,9 +4,29 @@ Point it at a folder of loose audio files — a book ripped into twelve mp3s, sa
 merges them into one chaptered `.m4b`, checks the result, then moves the originals into
 `_originals/`. It never deletes anything.
 
-## Running it
+## Download
 
-Double-click `Bookbind.app`, or:
+Grab `Bookbind-<version>-macos.zip` from
+[Releases](https://github.com/aghamorad/bookbind/releases), unzip it, and put
+`Bookbind.app` wherever you like. Nothing in the bundle is architecture-specific — it is
+a shell launcher around a Python server, so the same zip runs on Intel and Apple Silicon.
+It does need:
+
+```bash
+brew install python3 ffmpeg
+```
+
+```bash
+python3 -m pip install mutagen
+```
+
+If one of those is missing the app names it and tells you the command.
+
+**First launch.** The app is not signed or notarized, so macOS refuses a plain
+double-click. Right-click `Bookbind.app` → **Open** → **Open**. After that it launches
+normally.
+
+## Running from source
 
 ```bash
 python3 app.py

@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to attach a fresh build to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  macos-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # The checkout keeps app.py beside the .app so it stays editable; the released
+      # bundle carries it so a downloader gets one thing to drag and nothing to install.
+      - name: Stage a self-contained bundle
+        run: |
+          RES=Bookbind.app/Contents/Resources
+          cp app.py "$RES/"
+          cp -R static "$RES/"
+          chmod +x Bookbind.app/Contents/MacOS/launcher
+
+      - name: Package
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          mkdir -p dist
+          zip -r -X "dist/Bookbind-${TAG#v}-macos.zip" Bookbind.app
+
+      - name: Check the artifact as a downloader receives it
+        run: |
+          unzip -q dist/*.zip -d /tmp/out
+          test -x /tmp/out/Bookbind.app/Contents/MacOS/launcher
+          test -f /tmp/out/Bookbind.app/Contents/Resources/app.py
+          test -f /tmp/out/Bookbind.app/Contents/Resources/static/index.html
+          python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/app.py').read())"
+          find /tmp/out -type f | sort
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          cat > /tmp/notes.md <<'EOF'
+          One download, nothing to install. Unzip it, put `Bookbind.app` wherever you like,
+          and double-click it — the server, the page and the icon all live inside the bundle.
+
+          **First launch.** The app is not signed or notarized, so macOS refuses a plain
+          double-click. Right-click `Bookbind.app` → **Open** → **Open**. After that it
+          launches normally.
+
+          **Requirements.** It still shells out to Python and ffmpeg:
+
+              brew install python3 ffmpeg
+              python3 -m pip install mutagen
+
+          If one of those is missing, the app names it and prints the command to fix it.
+          Nothing in the bundle is architecture-specific — the same zip runs on Intel and
+          Apple Silicon.
+          EOF
+          gh release create "$TAG" dist/*.zip --title "Bookbind ${TAG#v}" \
+            --notes-file /tmp/notes.md --clobber
+          gh release view "$TAG" --json isDraft,tagName,assets
