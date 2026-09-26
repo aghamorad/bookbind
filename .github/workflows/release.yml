@@ -96,11 +96,16 @@ jobs:
       # the whole point of this step, not decoration.
       - name: Fetch a static ffmpeg
         run: |
-          mkdir -p /tmp/ff
+          mkdir -p /tmp/ff /tmp/z1 /tmp/z2
           curl -fsSL -o /tmp/ffmpeg.zip  https://evermeet.cx/ffmpeg/getrelease/zip
           curl -fsSL -o /tmp/ffprobe.zip https://evermeet.cx/ffprobe/getrelease/zip
-          unzip -q /tmp/ffmpeg.zip  -d /tmp/ff
-          unzip -q /tmp/ffprobe.zip -d /tmp/ff
+          # Each archive is unpacked on its own: the ffprobe one also carries an ffmpeg,
+          # and unpacking both into one directory stops to ask about overwriting it.
+          unzip -qo /tmp/ffmpeg.zip  -d /tmp/z1
+          unzip -qo /tmp/ffprobe.zip -d /tmp/z2
+          ls -l /tmp/z1 /tmp/z2
+          cp /tmp/z1/ffmpeg  /tmp/ff/ffmpeg
+          cp /tmp/z2/ffprobe /tmp/ff/ffprobe
           chmod +x /tmp/ff/ffmpeg /tmp/ff/ffprobe
           for b in /tmp/ff/ffmpeg /tmp/ff/ffprobe; do
             echo "== $b"
