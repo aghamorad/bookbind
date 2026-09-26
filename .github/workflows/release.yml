@@ -97,15 +97,17 @@ jobs:
       - name: Fetch a static ffmpeg
         run: |
           mkdir -p /tmp/ff /tmp/z1 /tmp/z2
+          # The two endpoints differ by one path segment, and the wrong one does not
+          # 404 -- it quietly serves ffmpeg again, so the copy below would fail with a
+          # confusing "no such file" instead of a bad URL.
           curl -fsSL -o /tmp/ffmpeg.zip  https://evermeet.cx/ffmpeg/getrelease/zip
-          curl -fsSL -o /tmp/ffprobe.zip https://evermeet.cx/ffprobe/getrelease/zip
-          # Each archive is unpacked on its own: the ffprobe one also carries an ffmpeg,
-          # and unpacking both into one directory stops to ask about overwriting it.
+          curl -fsSL -o /tmp/ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          # Unpacked into separate directories so identical filenames cannot collide.
           unzip -qo /tmp/ffmpeg.zip  -d /tmp/z1
           unzip -qo /tmp/ffprobe.zip -d /tmp/z2
           ls -l /tmp/z1 /tmp/z2
-          cp /tmp/z1/ffmpeg  /tmp/ff/ffmpeg
-          cp /tmp/z2/ffprobe /tmp/ff/ffprobe
+          cp "$(find /tmp/z1 -type f -name ffmpeg  -perm -u+x | head -1)" /tmp/ff/ffmpeg
+          cp "$(find /tmp/z2 -type f -name ffprobe -perm -u+x | head -1)" /tmp/ff/ffprobe
           chmod +x /tmp/ff/ffmpeg /tmp/ff/ffprobe
           for b in /tmp/ff/ffmpeg /tmp/ff/ffprobe; do
             echo "== $b"
