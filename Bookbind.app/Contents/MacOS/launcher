@@ -27,27 +27,39 @@ bail() {
   exit 1
 }
 
-[[ -f "$APP/app.py" ]] || bail "The server file is missing from this copy of Bookbind."
-
 if curl -s -o /dev/null --max-time 1 "$URL/api/home"; then
   open "$URL"                                      # already running: just show it
   exit 0
 fi
 
-# An interpreter that can actually see mutagen is the only one worth starting
-PY=""
-for c in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import mutagen' >/dev/null 2>&1; then
-    PY="$c"
-    break
-  fi
-done
-[[ -n "$PY" ]] || bail "Bookbind needs Python 3 with the mutagen module.\\n\\nRun:\\n  brew install python3\\n  python3 -m pip install mutagen"
+# A self-contained build carries its own Python and ffmpeg under Resources/bin and
+# needs nothing installed; a lightweight copy runs the server with the Homebrew ones.
+SELF="$RES/bin/BookbindServer"
+if [[ -x "$SELF" ]]; then
+  export PATH="$RES/bin:$PATH"
+  command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 \
+    || bail "The ffmpeg bundled with Bookbind is missing.\\n\\nDownload the app again."
+  RUN=("$SELF")
+else
+  [[ -f "$APP/app.py" ]] || bail "The server file is missing from this copy of Bookbind."
 
-command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 \
-  || bail "Bookbind needs ffmpeg.\\n\\nRun:\\n  brew install ffmpeg"
+  # An interpreter that can actually see mutagen is the only one worth starting
+  PY=""
+  for c in python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import mutagen' >/dev/null 2>&1; then
+      PY="$c"
+      break
+    fi
+  done
+  [[ -n "$PY" ]] || bail "Bookbind needs Python 3 with the mutagen module.\\n\\nRun:\\n  brew install python3\\n  python3 -m pip install mutagen"
 
-"$PY" "$APP/app.py" >>"$LOG" 2>&1 &
+  command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 \
+    || bail "Bookbind needs ffmpeg.\\n\\nRun:\\n  brew install ffmpeg"
+
+  RUN=("$PY" "$APP/app.py")
+fi
+
+"${RUN[@]}" >>"$LOG" 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT INT TERM
 

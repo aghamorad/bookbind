@@ -6,11 +6,17 @@ merges them into one chaptered `.m4b`, checks the result, then moves the origina
 
 ## Download
 
-Grab `Bookbind-<version>-macos.zip` from
-[Releases](https://github.com/aghamorad/bookbind/releases), unzip it, and put
-`Bookbind.app` wherever you like. Nothing in the bundle is architecture-specific — it is
-a shell launcher around a Python server, so the same zip runs on Intel and Apple Silicon.
-It does need:
+Two builds, same app — take whichever suits the machine, from
+[Releases](https://github.com/aghamorad/bookbind/releases). Unzip either one and put
+`Bookbind.app` wherever you like.
+
+| Asset | Size | Needs |
+| --- | --- | --- |
+| `Bookbind-<version>-macos.zip` | ~2 MB | Python 3 with `mutagen`, and ffmpeg |
+| `Bookbind-<version>-macos-intel.zip` | ~100 MB | nothing — both are inside it |
+
+The small one starts instantly and is not architecture-specific; the launcher is a shell
+script around a Python server, so the same zip runs on Intel and Apple Silicon.
 
 ```bash
 brew install python3 ffmpeg
@@ -20,7 +26,8 @@ brew install python3 ffmpeg
 python3 -m pip install mutagen
 ```
 
-If one of those is missing the app names it and tells you the command.
+If one of those is missing the app names it and tells you the command. The large one is
+frozen with PyInstaller and carries a static ffmpeg, built for Intel Macs.
 
 **First launch.** The app is not signed or notarized, so macOS refuses a plain
 double-click. Right-click `Bookbind.app` → **Open** → **Open**. After that it launches
