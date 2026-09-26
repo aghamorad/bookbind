@@ -1,0 +1,30 @@
+#!/bin/zsh
+# Bookbind -- starts the local server, opens the page, and stays alive so quitting
+# this app from the Dock shuts the server down with it.
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"     # the folder holding the .app
+cd "$DIR" || exit 1
+
+PORT=8765
+URL="http://127.0.0.1:$PORT"
+
+if curl -s -o /dev/null --max-time 1 "$URL/api/home"; then
+  open "$URL"                                      # already running: just show it
+  exit 0
+fi
+
+LOG="$DIR/bookbind.log"
+python3 "$DIR/app.py" >>"$LOG" 2>&1 &
+SERVER=$!
+trap 'kill $SERVER 2>/dev/null' EXIT INT TERM
+
+for i in {1..40}; do
+  curl -s -o /dev/null --max-time 1 "$URL/api/home" && break
+  kill -0 $SERVER 2>/dev/null || {                     # server died on startup
+    osascript -e 'display alert "Bookbind could not start" message "See bookbind.log in the app folder." as critical'
+    exit 1
+  }
+  sleep 0.25
+done
+
+open "$URL"
+wait $SERVER

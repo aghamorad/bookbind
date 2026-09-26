@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookbind</title>
+<link rel="icon" href="/static/icon.png">
+<style>
+  :root{
+    --bg:#f6f6f7; --card:#fff; --ink:#17181a; --dim:#6b6f76; --line:#e3e4e8;
+    --accent:#2a6df4; --ok:#128a5b; --bad:#c0392b; --warn:#a86a00;
+    --radius:12px; --shadow:0 1px 2px rgba(0,0,0,.05),0 8px 24px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#131417; --card:#1c1e22; --ink:#eceef2; --dim:#9aa0aa;
+           --line:#2b2e34; --accent:#5b8dff; --ok:#3ecf8e; --bad:#ff6b5e; --warn:#e0a944;
+           --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35); }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  header{padding:26px 32px 18px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:20px;letter-spacing:-.01em}
+  header p{margin:6px 0 0;color:var(--dim);font-size:13.5px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:22px;
+       padding:22px 32px 60px;align-items:start;max-width:1400px}
+  @media (max-width:1000px){ main{grid-template-columns:1fr} }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:var(--shadow);padding:18px;margin-bottom:16px}
+  .card h2{margin:0 0 14px;font-size:13px;text-transform:uppercase;letter-spacing:.07em;
+           color:var(--dim);font-weight:600}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 5px}
+  input[type=text],input[type=number],select{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+    background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  button{font:inherit;font-size:14px;padding:9px 15px;border-radius:9px;border:1px solid var(--line);
+         background:var(--card);color:var(--ink);cursor:pointer;transition:.12s}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:disabled{opacity:.4;cursor:not-allowed}
+  button.small{padding:5px 10px;font-size:12.5px}
+  .btns{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+  .hint{color:var(--dim);font-size:12.5px;margin:9px 0 0}
+  .path{display:flex;gap:9px}
+  .path input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  .browse{max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:10px;
+          margin-top:11px;display:none}
+  .browse.on{display:block}
+  .browse div{padding:8px 11px;cursor:pointer;display:flex;justify-content:space-between;
+              gap:12px;font-size:13.5px;border-bottom:1px solid var(--line)}
+  .browse div:last-child{border-bottom:0}
+  .browse div:hover{background:var(--bg)}
+  .browse .n{color:var(--dim);font-size:12px;flex:none}
+  .stat{display:flex;gap:22px;flex-wrap:wrap;margin-top:4px}
+  .stat div{font-size:13px;color:var(--dim)}
+  .stat b{display:block;font-size:17px;color:var(--ink);font-weight:600}
+  .err{background:color-mix(in srgb,var(--bad) 12%,transparent);border:1px solid var(--bad);
+       color:var(--bad);padding:10px 12px;border-radius:9px;font-size:13.5px;margin-top:12px}
+  .cand{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px;
+        cursor:pointer;display:flex;gap:12px;align-items:center}
+  .cand:hover{border-color:var(--accent)}
+  .cand img{width:46px;height:46px;border-radius:7px;object-fit:cover;flex:none;background:var(--bg)}
+  .cand .t{font-weight:600;font-size:13.5px;line-height:1.35}
+  .cand .s{color:var(--dim);font-size:12.5px}
+  .job{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:11px}
+  .job .top{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .job .nm{font-weight:600;font-size:13.5px;word-break:break-word}
+  .job .st{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);flex:none}
+  .bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin:10px 0 8px}
+  .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .4s}
+  .job.done .bar i{background:var(--ok)}
+  .job.failed .bar i{background:var(--bad)}
+  .checks{margin:8px 0 0;font-size:12.5px}
+  .checks div{color:var(--dim);display:flex;gap:7px}
+  .checks b{font-weight:500;color:var(--ink)}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;
+      font-size:11.5px;max-height:150px;overflow:auto;white-space:pre-wrap;margin:9px 0 0}
+  .empty{color:var(--dim);font-size:13.5px;padding:8px 0}
+  .flash{animation:fl 1.1s ease}
+  @keyframes fl{from{background:color-mix(in srgb,var(--ok) 22%,transparent)}}
+</style>
+</head>
+<body>
+<header>
+  <h1><img src="/static/icon.png" alt="" width="34" height="34"
+           style="vertical-align:-9px;margin-right:9px;border-radius:8px">Bookbind</h1>
+  <p>Point it at a folder of loose audio files. It merges them into one chaptered
+     <b>.m4b</b>, checks the result, then moves the originals aside &mdash; never deletes them.</p>
+</header>
+
+<main>
+<section>
+  <div class="card">
+    <h2>1 &middot; The folder</h2>
+    <div class="path">
+      <input type="text" id="folder" placeholder="/Volumes/DRIVE/Audiobooks/Author, Title (2020)">
+      <button class="small" onclick="toggleBrowse()">Browse…</button>
+    </div>
+    <div class="browse" id="browse"></div>
+    <div class="btns"><button onclick="scan()">Scan folder</button></div>
+    <div id="scanout"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 &middot; What is it</h2>
+    <div class="row">
+      <div><label>Author</label><input type="text" id="author" placeholder="Hammett"></div>
+      <div><label>Title</label><input type="text" id="title" placeholder="The Maltese Falcon"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div><label>Year</label><input type="text" id="year" placeholder="1930"></div>
+      <div><label>Narrator (optional)</label><input type="text" id="narrator"></div>
+    </div>
+    <div id="coverbox" style="margin-top:12px;display:none;align-items:center;gap:12px">
+      <img id="cover" style="width:64px;height:64px;border-radius:8px;object-fit:cover">
+      <span class="hint" style="margin:0">cover art will be embedded</span>
+    </div>
+    <div class="btns">
+      <button onclick="lookup()">Search online catalogue</button>
+      <button class="small" onclick="clearCover()" id="clearc" style="display:none">Remove cover</button>
+    </div>
+    <div id="searchout"></div>
+  </div>
+
+  <div class="card">
+    <h2>3 &middot; How</h2>
+    <div class="row">
+      <div>
+        <label>Track order</label>
+        <select id="order">
+          <option value="auto">From tags, else filename</option>
+          <option value="path">Always filename</option>
+        </select>
+      </div>
+      <div>
+        <label>Bitrate (only if re-encoding)</label>
+        <select id="bitrate">
+          <option value="">Match the source</option>
+          <option value="64">64 kbps</option>
+          <option value="96">96 kbps</option>
+          <option value="128">128 kbps</option>
+        </select>
+      </div>
+    </div>
+    <div id="planout"></div>
+    <div class="btns"><button class="primary" id="go" onclick="start()">Make the audiobook</button></div>
+  </div>
+</section>
+
+<aside>
+  <div class="card">
+    <h2>Jobs</h2>
+    <div id="jobs"><div class="empty">Nothing running yet.</div></div>
+  </div>
+</aside>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let browsePath = null, coverUrl = null, plan = null, timer = null;
+
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gb = n => (n / 1e9).toFixed(2) + ' GB';
+const hh = h => h >= 1 ? h.toFixed(1) + ' h' : Math.round(h * 60) + ' min';
+
+function api(path, body) {
+  return fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify(body)} : undefined)
+    .then(r => r.json().then(j => ({ok: r.ok, ...j})));
+}
+
+/* ---------- folder browse ---------- */
+function toggleBrowse() { const b = $('browse');
+  if (b.classList.contains('on')) { b.classList.remove('on'); return; }
+  b.classList.add('on'); listDir(browsePath || $('folder').value || null);
+}
+async function listDir(p) {
+  const r = await api('/api/browse' + (p ? '?path=' + encodeURIComponent(p) : ''));
+  if (r.error) { $('browse').innerHTML = `<div>${esc(r.error)}</div>`; return; }
+  browsePath = r.path;
+  let html = r.parent ? `<div onclick="listDir('${esc(r.parent)}')"><span>↑ ..</span></div>` : '';
+  html += r.dirs.map(d =>
+    `<div onclick="listDir('${esc(d.path)}')"><span>${esc(d.name)}</span></div>`).join('');
+  if (!r.dirs.length) html += `<div><span class="n">no subfolders</span></div>`;
+  $('browse').innerHTML = html;
+  $('folder').value = r.path;
+  if (r.audio > 0) {
+    $('browse').innerHTML = `<div onclick="pick('${esc(r.path)}')" class="flash">
+        <span><b>Use this folder</b> &mdash; ${r.audio} audio files here</span></div>` + html;
+  }
+}
+function pick(p) { $('folder').value = p; $('browse').classList.remove('on'); scan(); }
+
+/* ---------- scan ---------- */
+async function scan() {
+  const p = $('folder').value.trim();
+  if (!p) return;
+  $('scanout').innerHTML = '<p class="hint">reading…</p>';
+  const r = await api('/api/scan?path=' + encodeURIComponent(p));
+  if (r.error) { $('scanout').innerHTML = `<div class="err">${esc(r.error)}</div>`; return; }
+  $('scanout').innerHTML = `
+    <div class="stat">
+      <div><b>${r.count}</b>audio files</div>
+      <div><b>${hh(r.hours)}</b>total audio</div>
+      <div><b>${gb(r.size)}</b>on disk</div>
+      <div><b>${r.tagged}/${r.count}</b>have track tags</div>
+    </div>
+    <p class="hint">${r.sample.map(esc).join(' · ')}${r.count > 6 ? ' …' : ''}</p>
+    ${r.orig ? '<p class="hint">This folder already has an <b>_originals</b> subfolder.</p>' : ''}
+    ${r.already.length ? `<p class="hint">Already contains ${r.already.map(esc).join(', ')}</p>` : ''}
+    ${r.count < 2 ? '<div class="err">Fewer than two audio files here &mdash; nothing to merge.</div>' : ''}`;
+  guessNames(p);
+  plan = null; $('planout').innerHTML = '';
+}
+
+function guessNames(p) {
+  if ($('author').value && $('title').value) return;
+  const base = p.split('/').filter(Boolean).pop() || '';
+  let m = base.match(/^([^,]+),\s*(.+?)\s*\((\d{3,4})\)\s*$/);
+  if (m) { $('author').value = m[1]; $('title').value = m[2]; $('year').value = m[3]; return; }
+  m = base.match(/^(.*?)\s*\((\d{3,4})\)\s*$/);
+  if (m) { $('title').value = m[1]; $('year').value = m[2]; }
+  else $('title').value = base;
+}
+
+/* ---------- catalogue lookup ---------- */
+async function lookup() {
+  const a = $('author').value.trim(), t = $('title').value.trim();
+  if (!a && !t) return;
+  $('searchout').innerHTML = '<p class="hint">searching…</p>';
+  const r = await api('/api/search?author=' + encodeURIComponent(a) + '&title=' + encodeURIComponent(t));
+  if (r.error || !r.results.length) {
+    $('searchout').innerHTML = `<p class="hint">No catalogue match${r.error ? ' (' + esc(r.error) + ')' : ''}. Fill the fields by hand — that works fine.</p>`;
+    return;
+  }
+  $('searchout').innerHTML = '<div style="margin-top:12px">' + r.results.map((c, i) => `
+    <div class="cand" onclick='useCandidate(${JSON.stringify(c).replace(/'/g, "&#39;")})'>
+      <img src="${esc(c.cover)}" loading="lazy" alt="">
+      <div><div class="t">${esc(c.title)}</div>
+        <div class="s">${esc(c.author)}${c.narrator ? ' · read by ' + esc(c.narrator) : ''}
+        ${c.year ? ' · ' + esc(c.year) : ''}</div></div>
+    </div>`).join('') + '</div>' +
+    '<p class="hint">Year from iTunes is the <b>audiobook release</b> year, which is often later than the book&rsquo;s. Edit it if you know better.</p>';
+}
+
+function useCandidate(c) {
+  $('author').value = c.author;
+  $('title').value  = c.title;
+  if (c.year) $('year').value = c.year;
+  if (c.narrator) $('narrator').value = c.narrator;
+  coverUrl = c.cover || null;
+  if (coverUrl) {
+    $('cover').src = coverUrl;
+    $('coverbox').style.display = 'flex';
+    $('clearc').style.display = 'inline-block';
+  }
+  $('searchout').innerHTML = '<p class="hint">Filled in. Check the year, then press Make the audiobook.</p>';
+  plan = null; $('planout').innerHTML = '';
+}
+function clearCover() {
+  coverUrl = null; $('coverbox').style.display = 'none'; $('clearc').style.display = 'none';
+}
+
+/* ---------- start ---------- */
+async function start() {
+  const body = {
+    folder: $('folder').value.trim(),
+    author: $('author').value, title: $('title').value,
+    year: $('year').value, narrator: $('narrator').value,
+    cover: coverUrl, order: $('order').value, bitrate: $('bitrate').value || null
+  };
+  if (!body.folder) { $('planout').innerHTML = '<div class="err">Pick a folder first.</div>'; return; }
+  $('go').disabled = true;
+  $('planout').innerHTML = '<p class="hint">checking…</p>';
+  const r = await api('/api/start', body);
+  $('go').disabled = false;
+  if (r.error) { $('planout').innerHTML = `<div class="err">${esc(r.error)}</div>`; return; }
+  const j = r.job;
+  $('planout').innerHTML = `<p class="hint">Queued <b>${esc(j.name)}</b> —
+      ${j.n} files, ${hh(j.hours)}, about ${gb(r.est_bytes)}.</p>`;
+  poll(true);
+}
+
+/* ---------- jobs ---------- */
+async function poll(force) {
+  const r = await api('/api/jobs');
+  const jobs = r.jobs || [];
+  const live = jobs.some(j => ['queued','encoding','verifying','moving originals'].includes(j.state));
+  $('jobs').innerHTML = jobs.length ? jobs.map(renderJob).join('')
+    : '<div class="empty">Nothing running yet.</div>';
+  clearTimeout(timer);
+  if (live || force) timer = setTimeout(poll, 1000);
+}
+function renderJob(j) {
+  const cls = j.state === 'done' ? 'done' : (j.state === 'failed' ? 'failed' : '');
+  const checks = j.checks.length ? '<div class="checks">' + j.checks.map(c =>
+      `<div>${c.ok ? '✓' : '✗'} <b>${esc(c.name)}</b> ${esc(c.detail)}</div>`).join('') + '</div>' : '';
+  const log = j.log.length ? `<pre>${esc(j.log.slice(-8).join('\n'))}</pre>` : '';
+  const acts = [];
+  if (j.state === 'done') acts.push(`<button class="small" onclick="reveal('${esc(j.folder)}')">Show in Finder</button>`,
+                                    `<button class="small" onclick="restore('${j.id}')">Undo — put originals back</button>`);
+  if (['queued','encoding','verifying'].includes(j.state))
+    acts.push(`<button class="small" onclick="cancel('${j.id}')">Stop</button>`);
+  return `<div class="job ${cls}">
+    <div class="top"><span class="nm">${esc(j.name)}</span><span class="st">${esc(j.state)}</span></div>
+    <div class="bar"><i style="width:${j.state === 'done' ? 100 : j.pct}%"></i></div>
+    <div class="hint" style="margin:0">${j.n} files · ${hh(j.hours)}${j.elapsed ? ' · ' + j.elapsed + 's' : ''}${j.note ? ' · ' + esc(j.note) : ''}</div>
+    ${checks}${log}
+    <div class="btns">${acts.join('')}</div>
+  </div>`;
+}
+const cancel  = id => api('/api/cancel',  {id}).then(() => poll(true));
+const reveal  = f  => api('/api/reveal',  {folder: f});
+async function restore(id) {
+  const r = await api('/api/restore', {id});
+  alert(r.message || r.error || 'done');
+  poll(true);
+}
+api('/api/home');   // warm up
+</script>
+</body>
+</html>
