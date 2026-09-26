@@ -80,6 +80,7 @@ jobs:
 
   bundled:
     needs: lightweight
+    name: bundled (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
