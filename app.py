@@ -11,6 +11,7 @@ import queue
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -407,7 +408,7 @@ def move_originals(plan):
 def run_job(job):
     plan = job.plan
     job.state, job.t0 = "encoding", time.time()
-    tmpdir = os.path.join(HERE, "tmp")
+    tmpdir = os.path.join(tempfile.gettempdir(), "bookbind")
     os.makedirs(tmpdir, exist_ok=True)
     concat = os.path.join(tmpdir, f"{job.id}.concat")
     chapters = os.path.join(tmpdir, f"{job.id}.ffmeta")
