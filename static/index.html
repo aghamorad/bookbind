@@ -627,7 +627,13 @@ const newer = (a, b) => {                    // is a a later number than b?
 
 // The stamp lives in the footer, below this script, so the check waits for the
 // whole document rather than looking for an element that is not there yet.
-document.addEventListener('DOMContentLoaded', checkVersion);
+document.addEventListener('DOMContentLoaded', () => {
+  checkVersion();
+  // The app hands us ?folder=… when it was given a folder to open on, which is
+  // the same thing as the person having picked that folder by hand.
+  const f = new URLSearchParams(location.search).get('folder');
+  if (f) { setFolder(f); scan(); }
+});
 
 async function checkVersion() {
   const stamp = $('version');

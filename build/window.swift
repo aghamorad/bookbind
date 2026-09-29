@@ -241,7 +241,13 @@ final class MainWindow: NSObject, WKScriptMessageHandler, WKNavigationDelegate, 
 
         do {
             try server.start()
-            web.load(URLRequest(url: server.url))
+            var u = server.url
+            if let f = Bookbind.folderArgument(),
+               var c = URLComponents(url: u, resolvingAgainstBaseURL: false) {
+                c.queryItems = [URLQueryItem(name: "folder", value: f)]
+                u = c.url ?? u
+            }
+            web.load(URLRequest(url: u))
         } catch let t as Trouble {
             alert(t.text, "Bookbind cannot start")
         } catch {
@@ -427,7 +433,37 @@ final class BookbindApp: NSObject, NSApplicationDelegate {
 
 @main
 struct Bookbind {
+    static let usage = """
+    bookbind — one folder of loose audio in, one chaptered .m4b out
+
+      bookbind              open the window
+      bookbind PATH         open it already looking at PATH
+      bookbind --help       this
+
+    The window keeps everything: the file list, the chapter titles, the checks.
+    For the same engine with no window at all -- a script, a big pile, a cron job:
+
+      python3 \(Where.sourceRoot ?? "~/Claude/Bookbind")/bookbind_cli.py PATH --author … --title …
+    """
+
+    /// A folder named on the command line, so the window opens on it. Flags and
+    /// anything that is not a directory are ignored -- `open -a Bookbind` hands
+    /// the app its own bookkeeping arguments too.
+    static func folderArgument() -> String? {
+        for a in CommandLine.arguments.dropFirst() where !a.hasPrefix("-") {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: a, isDirectory: &isDir), isDir.boolValue {
+                return URL(fileURLWithPath: a).standardizedFileURL.path
+            }
+        }
+        return nil
+    }
+
     static func main() {
+        if CommandLine.arguments.contains(where: { $0 == "-h" || $0 == "--help" }) {
+            FileHandle.standardOutput.write(Data(usage.utf8))
+            exit(0)
+        }
         let app = NSApplication.shared
         let delegate = BookbindApp()
         app.delegate = delegate
