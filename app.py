@@ -29,7 +29,7 @@ REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 
 def version():
@@ -79,6 +79,36 @@ def scan_audio(root):
             if os.path.splitext(f)[1].lower() in AUDIO_EXT:
                 out.append(os.path.join(dp, f))
     return sorted(out, key=lambda p: natkey(os.path.relpath(p, root)))
+
+
+def find_locked(root):
+    """Audible's encrypted .aa under root. They hold audio we cannot read, so a
+    folder containing them is a folder with a piece missing -- see build_plan."""
+    out = []
+    for dp, dns, fns in os.walk(root):
+        dns[:] = [d for d in dns if not d.startswith(".") and d != ORIG
+                  and d != "__MACOSX"]
+        for f in sorted(fns):
+            if not f.startswith(("._", ".")) and \
+                    os.path.splitext(f)[1].lower() in SKIP_EXT:
+                out.append(os.path.relpath(os.path.join(dp, f), root))
+    return out
+
+
+def source_files(folder, chosen=None):
+    """The files a job will actually use, in scan order.
+
+    What was chosen wins. Otherwise it is the folder's own audio minus anything
+    that is a finished book in its own right: an .m4b sitting beside the tracks
+    is the book, not a chapter of one. That is the same rule the file list
+    applies, and it has to live in one place -- a folder holding a completed
+    book plus the tracks it was built from would otherwise merge the book into
+    itself. Adding an .m4b by hand still works; it just cannot be the default.
+    """
+    if chosen:
+        return list(chosen)
+    return [f for f in scan_audio(folder)
+            if os.path.splitext(f)[1].lower() != ".m4b"]
 
 
 def probe(fp):
@@ -191,7 +221,7 @@ def inside(path, folder):
 
 
 def build_plan(folder, author, title, year, narrator, cover_path, order_method="auto",
-               bitrate_kbps=None, files=None, titles=None):
+               bitrate_kbps=None, files=None, titles=None, skip_locked=False):
     """Everything the encoder needs, or an error string explaining what is wrong.
 
     Hand it `files` and those are the sources, in that order, whatever order they
@@ -218,9 +248,22 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
     gone = [os.path.basename(f) for f in chosen if not os.path.isfile(f)]
     if gone:
         return None, "these files are not there any more: " + ", ".join(gone[:4])
-    files = chosen or scan_audio(folder)
+    files = source_files(folder, chosen)
     if not files:
         return None, "no audio files in that folder"
+
+    # An encrypted Audible file is audio you own and Bookbind cannot read, so a
+    # folder holding one is missing part of its book. Refusing is the honest
+    # answer: merging the readable files would quietly hand back an abridged
+    # copy. Naming the files by hand is a decision, not an accident, so that
+    # case is left alone.
+    if not chosen:
+        locked = find_locked(folder)
+        if locked and not skip_locked:
+            return None, ("encrypted Audible source, needs keys: "
+                          + ", ".join(locked[:4])
+                          + (f" (+{len(locked)-4} more)" if len(locked) > 4 else "")
+                          + " -- pass --ignore-locked to merge the rest anyway")
 
     exts = {os.path.splitext(f)[1].lower() for f in files}
     if exts & SKIP_EXT:
@@ -552,14 +595,19 @@ def run_job(job):
             job.say("an existing file was set aside as .rejected")
         os.replace(partial, plan["out"])
 
-        job.state = "moving originals"
-        mapping = move_originals(plan)
-        job.manifest = os.path.join(plan["folder"], f".bookbind-{job.id}.json")
-        with open(job.manifest, "w", encoding="utf-8") as fh:
-            json.dump({"id": job.id, "output": plan["out_name"], "moved": mapping,
-                       "checks": job.checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")},
-                      fh, indent=1)
-        job.state, job.note = "done", f"{len(mapping)} originals moved to {ORIG}/"
+        # A caller may ask for the book and nothing else -- the CLI's
+        # --keep-originals. Then there is nothing to undo, so no manifest either.
+        if plan.get("move", True):
+            job.state = "moving originals"
+            mapping = move_originals(plan)
+            job.manifest = os.path.join(plan["folder"], f".bookbind-{job.id}.json")
+            with open(job.manifest, "w", encoding="utf-8") as fh:
+                json.dump({"id": job.id, "output": plan["out_name"], "moved": mapping,
+                           "checks": job.checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")},
+                          fh, indent=1)
+            job.state, job.note = "done", f"{len(mapping)} originals moved to {ORIG}/"
+        else:
+            job.state, job.note = "done", "book written; sources left where they are"
     except Exception as e:
         job.state, job.note = "failed", f"{type(e).__name__}: {e}"
         if os.path.exists(partial):

@@ -26,6 +26,7 @@ jobs:
         run: |
           RES=Bookbind.app/Contents/Resources
           cp app.py "$RES/"
+          cp bookbind_cli.py "$RES/"
           cp -R static "$RES/"
           chmod +x Bookbind.app/Contents/MacOS/Bookbind
 
@@ -43,6 +44,7 @@ jobs:
           test -f /tmp/out/Bookbind.app/Contents/Resources/static/index.html
           test -f /tmp/out/Bookbind.app/Contents/Resources/AppIcon.icns
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/app.py').read())"
+          python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/bookbind_cli.py').read())"
           # This runner has no lipo, so read the fat header directly. A window binary
           # that is one architecture opens on half the Macs and not on the others.
           python3 - <<'PY'
@@ -65,24 +67,39 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           cat > /tmp/notes.md <<'EOF'
-          ## It is a real Mac app now
+          ## It answers to the command line now
 
-          Bookbind used to open a browser tab, and you picked the folder by typing a path
-          into a box. Both are gone. It is a proper app: its own window, its own Dock
-          icon, and no address bar anywhere.
+          The window is still the main thing: one folder, one button, one book. But the
+          same engine now answers to a command, which is what you want for a script, a big
+          pile, or a folder nobody needs to look at.
 
-          - **Choose folder** opens a Finder panel. **Add files** opens the same panel for
-            individual tracks. Nothing is browsed by hand any more.
-          - There are now **two lists**. *The folder* is the usual way — one folder, in
-            order. *The chapters* is the actual list of files that will become chapters,
-            and each row can be changed on its own: untick one to leave it out, move one
-            with the arrows, drop one with **×**, or type in its box to give that chapter
-            your own title.
-          - That second list is what you use when you found a track list online: type each
-            chapter's real name, put them in order, leave out the interviews, and the book
-            comes out named the way the publisher did it.
-          - A running job now stays in view while you read the rest of the page, instead of
-            scrolling away.
+              bookbind                       open the window
+              bookbind ~/Books/somewhere     open it already looking at that folder
+              bookbind --cli FOLDER …        no window: bind it right here, print JSON
+
+          `bookbind --cli` takes the folder and the names — `--author`, `--title`,
+          `--year`, `--narrator`, `--cover` — and prints one JSON object when it is done,
+          carrying the same checks the window shows you. `--dry-run` says what it would
+          do and changes nothing. `--lookup` fills empty boxes from iTunes. `--titles
+          "<path>=Opening Credits"` names a chapter, `--keep-originals` leaves the sources
+          where they are, and `--restore FOLDER` undoes a bind. stdout is JSON and progress
+          goes to stderr, so it pipes straight into `jq`.
+
+          The command is a shorthand for `bookbind_cli.py`, which is in the zip next to
+          `app.py` — on the small build, `python3 Bookbind.app/Contents/Resources/bookbind_cli.py`.
+          It is the app's own engine and not a reimplementation: same ordering, same
+          verification, same untouched originals.
+
+          ## Two hazards it now handles properly
+
+          - **A finished `.m4b` sitting in the folder is a book, not a chapter.** It used to
+            be picked up as one more source file, which quietly produced a book with the
+            previous book inside it. It is never taken as a source now; adding one by hand
+            still works.
+          - **Audible `.aa` files are encrypted.** A folder holding them used to merge
+            whatever it could and leave them behind without a word — an incomplete book
+            that looked finished. It now refuses, names the files, and says they need keys.
+            `--ignore-locked` binds the readable rest if you tell it to.
 
           Nothing else changed. It still copies the audio rather than re-recording it, it
           still checks its own work before touching your originals, and it still never

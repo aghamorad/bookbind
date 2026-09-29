@@ -32,6 +32,36 @@ That second list is what you use when you want to match a track list you found o
 each chapter's real name, put them in the right order, leave out the interviews, and the
 book comes out named the way the publisher did it.
 
+## The command line
+
+The window and the command line are the **same engine**, so nothing here is a second
+implementation that can drift: everything below calls the app's own `app.py`.
+
+```bash
+bookbind                       # open the window
+bookbind ~/Books/somewhere     # open it already looking at that folder
+bookbind --cli FOLDER …        # no window: bind it right here, print JSON
+```
+
+`bookbind` is a shorthand (`~/.local/bin/bookbind`). `--cli` passes the rest through to
+`bookbind_cli.py`, which is in this folder and can also be called directly:
+
+```bash
+python3 bookbind_cli.py "/Books/Hammett, The Maltese Falcon (1930)" \
+    --author "Dashiell Hammett" --title "The Maltese Falcon" --year 1930
+```
+
+It prints one JSON object on stdout and its progress on stderr, so `| jq` stays clean.
+The folder's name is read the way the window reads it — `Hammett, The Maltese Falcon
+(1930)` fills in all three — but an author is never guessed. Useful flags: `--dry-run`
+(say what would happen, change nothing), `--lookup` (fill empty year, narrator and cover
+from the top iTunes hit), `--titles "<path>=Opening Credits"` (name one chapter, can
+repeat), `--order auto|path|tags`, `--keep-originals`, and `--restore FOLDER` to undo.
+`--help` lists the lot.
+
+If the app is already open, `bookbind FOLDER` cannot retarget it — macOS hands a running
+app no arguments — so it says so rather than opening the wrong folder in silence.
+
 ## What it does, step by step
 
 1. **Look.** You hand it a folder. It tells you what audio it found there, how long it
