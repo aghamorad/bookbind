@@ -125,11 +125,18 @@ jobs:
           # Each of these sites builds for one architecture only, so the rows cannot
           # share a URL. `want` is checked against the downloaded binaries, because a
           # wrong URL here tends to serve a valid binary rather than 404.
+          #
+          # Both rows come from osxexperts. The intel row used to come from
+          # evermeet.cx, which started answering the runners with a bare
+          # `curl: (22) 429` -- v1.4.0 lost its intel zip to it twice, and the retry
+          # changed nothing, so the host is rate-limiting these IPs rather than
+          # having a bad minute. osxexperts' intel pair is x86_64 and links only
+          # against /usr/lib and /System/Library, which is all the check below asks.
           - runner: macos-15-intel
             arch: intel
             want: x86_64
-            ffmpeg_url: https://evermeet.cx/ffmpeg/getrelease/zip
-            ffprobe_url: https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+            ffmpeg_url: https://www.osxexperts.net/ffmpeg80intel.zip
+            ffprobe_url: https://www.osxexperts.net/ffprobe80intel.zip
           - runner: macos-15
             arch: silicon
             want: arm64
