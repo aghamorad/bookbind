@@ -29,7 +29,7 @@ REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 def version():
