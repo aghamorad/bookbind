@@ -228,6 +228,9 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
     were given in -- the page lets a track be dropped or the chapters resequenced.
     Leave them out and the folder is scanned instead, which is what asking for a
     folder on its own does.
+
+    One file is a job like any other: nothing needs merging, so what comes back is
+    that file retagged, with the cover and the chapter list written into it.
     """
     chosen = [os.path.abspath(os.path.expanduser(f)) for f in (files or [])]
     titles = {os.path.abspath(os.path.expanduser(k)): v.strip()
@@ -268,17 +271,15 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
     exts = {os.path.splitext(f)[1].lower() for f in files}
     if exts & SKIP_EXT:
         return None, f"encrypted Audible source ({', '.join(sorted(exts & SKIP_EXT))}) needs keys"
-    if len(files) < 2:
-        return None, "only one audio file -- nothing to merge"
-
     # a partial output from an earlier attempt is an audio file sitting in the same
     # folder; it must never be picked up as one of its own sources
     out_dir = folder
     out_name = safe_name(author, title, year) + ".m4b"
     out = os.path.join(out_dir, out_name)
     files = [f for f in files if os.path.abspath(f) != os.path.abspath(out)]
-    if len(files) < 2:
-        return None, "only one audio file -- nothing to merge"
+    if not files:
+        return None, ("the only audio here is the book this job would write -- "
+                      "rename the output, or move that file aside first")
 
     if not author or not title:
         return None, "author and title are both required to name the file"

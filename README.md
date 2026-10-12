@@ -10,6 +10,9 @@ It checks its own work as it goes, and it never deletes anything.
 You do not need to know what an `.m4b` is, or what "chapter list" means technically. Point
 it at the folder, press the button, and you get one book.
 
+A file that is already whole is a job too: hand it one track and it comes back as a tagged
+`.m4b` with a chapter list of its own, rather than being turned away.
+
 ## It is a real app
 
 `Bookbind.app` is a Mac app with its own window and its own Dock icon. It does not open a

@@ -129,9 +129,10 @@
 <header>
   <h1><img src="/static/icon.png" alt="" width="34" height="34"
            style="vertical-align:-9px;margin-right:9px;border-radius:8px">Bookbind</h1>
-  <p>Choose a folder of loose audio files, or pick the files yourself. It merges them into
-     one chaptered <b>.m4b</b>, checks the result, then moves the originals aside &mdash;
-     never deletes them.</p>
+  <p>Choose a folder of loose audio files, or pick the files yourself. They are bound into
+     one chaptered <b>.m4b</b> &mdash; title, author, cover and chapter list written in
+     &mdash; then the originals are moved aside, never deleted. A single file is fine too:
+     it comes back tagged, with a chapter list of its own.</p>
 </header>
 
 <main>
@@ -415,8 +416,7 @@ async function addPaths(paths) {
   }
   $('clearfiles').hidden = false;
   drawFiles();
-  if (list.length < 2) $('planout').innerHTML =
-    '<div class="err">One file on its own has nothing to merge with &mdash; add another.</div>';
+  $('planout').innerHTML = '';
 }
 
 function clearFiles() {
@@ -539,7 +539,7 @@ function clearCover() {
 async function start() {
   const chosen = list.filter(f => f.on);
   if (list.length && !chosen.length) {
-    $('planout').innerHTML = '<div class="err">Every file is unticked &mdash; nothing to merge.</div>';
+    $('planout').innerHTML = '<div class="err">Every file is unticked &mdash; nothing to bind.</div>';
     return;
   }
   if (!chosen.length) {
