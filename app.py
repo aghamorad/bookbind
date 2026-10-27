@@ -29,7 +29,7 @@ REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 
 def version():
@@ -286,12 +286,14 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
 
     # every source must be readable before we commit to a long encode
     bad, total, params = [], 0.0, set()
+    durs = {}
     for f in files:
         secs, br, sr, ch = probe(f)
         if not secs or secs <= 0:
             bad.append(os.path.basename(f))
             continue
         total += secs
+        durs[os.path.abspath(f)] = secs
         params.add((sr, ch))
     if bad:
         return None, ("these files could not be read: " + ", ".join(bad[:4])
@@ -321,6 +323,29 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
                 if os.path.splitext(f)[1].lower() in IMAGE_EXT]
         cover_path = imgs[0] if imgs else None
 
+    # The chapter list for the finished book, laid out on the merged timeline. A
+    # source that already carries a chapter track keeps it: re-tagging a finished
+    # .m4b must not flatten thirty named chapters into one. A title typed against
+    # a file still wins for that file, since that is a decision, not a default.
+    chapter_list, cur = [], 0.0
+    for f in ordered:
+        d = durs.get(os.path.abspath(f), 0.0)
+        typed = titles.get(os.path.abspath(f))
+        subs = [] if typed else source_chapters(f)
+        if subs:
+            for j, (s, e, t) in enumerate(subs):
+                s = max(0.0, min(s, d))
+                e = d if j == len(subs) - 1 else max(s, min(e, d))
+                chapter_list.append((cur + s, cur + e, t))
+            # a source whose chapter track stops short of its own end would leave
+            # a silent hole in the book; the last chapter runs to the file's end
+            if chapter_list and chapter_list[-1][1] < cur + d:
+                chapter_list[-1] = (chapter_list[-1][0], cur + d,
+                                    chapter_list[-1][2])
+        else:
+            chapter_list.append((cur, cur + d, typed or default_label(f)))
+        cur += d
+
     free = shutil.disk_usage(out_dir).free
     need = total * ((br or 128000) / 8) * 1.15
     if free < need:
@@ -331,7 +356,8 @@ def build_plan(folder, author, title, year, narrator, cover_path, order_method="
                 total_secs=total, lossless=lossless, bitrate=br, order=how,
                 author=author, title=title, year=str(year or ""),
                 narrator=narrator or "", cover=cover_path, titles=titles,
-                n=len(ordered), est_bytes=int(need)), None
+                chapters=chapter_list, n=len(ordered), n_chapters=len(chapter_list),
+                est_bytes=int(need)), None
 
 
 def safe_name(author, title, year):
@@ -354,6 +380,36 @@ def write_concat(files, path):
             fh.write("file '" + f.replace("'", "'\\''") + "'\n")
 
 
+def default_label(fp):
+    """What a chapter is called when nothing else names it: its own file name."""
+    label = os.path.splitext(os.path.basename(fp))[0]
+    return re.sub(r"^\s*\d{1,3}\s*[-_.)\]]\s*", "", label).strip() or label
+
+
+def source_chapters(fp):
+    """(start, end, title) for a file that already carries a chapter track.
+
+    Only the containers that can hold one are asked, so a folder of mp3 parts
+    does not pay a probe per file for a track that cannot be there.
+    """
+    if os.path.splitext(fp)[1].lower() not in {".m4a", ".m4b", ".mp4", ".aac"}:
+        return []
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_chapters", "-of", "json", fp],
+                       capture_output=True, text=True)
+    try:
+        raw = json.loads(r.stdout).get("chapters", [])
+    except Exception:
+        return []
+    out = []
+    for c in raw:
+        try:
+            s, e = float(c["start_time"]), float(c["end_time"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        out.append((s, e, (c.get("tags") or {}).get("title") or ""))
+    return out
+
+
 def write_chapters(plan, path):
     meta = [";FFMETADATA1",
             f"title={plan['title']}",
@@ -366,19 +422,11 @@ def write_chapters(plan, path):
         meta.append(f"comment=Narrated by {plan['narrator']}")
     meta.append("genre=Audiobook")
     meta.append(f"media_type=2")
-    cur = 0.0
-    for i, f in enumerate(plan["files"], 1):
-        d = duration(f) or 0.0
-        # a title typed against this file wins; otherwise the file's own tag would
-        # have to have been right in the first place, so the name is the next best
-        label = plan.get("titles", {}).get(os.path.abspath(f))
-        if not label:
-            label = os.path.splitext(os.path.basename(f))[0]
-            label = re.sub(r"^\s*\d{1,3}\s*[-_.)\]]\s*", "", label).strip() or label
+    for start, end, label in plan["chapters"]:
+        label = (label or "").strip() or "Chapter"
         meta += ["[CHAPTER]", "TIMEBASE=1/1000",
-                 f"START={int(cur * 1000)}", f"END={int((cur + d) * 1000)}",
+                 f"START={int(start * 1000)}", f"END={int(end * 1000)}",
                  f"title={label}"]
-        cur += d
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(meta) + "\n")
 
@@ -445,7 +493,8 @@ def verify(plan, out):
     checks.append(("duration", abs(dur - plan["total_secs"]) <= max(5, plan["total_secs"] * 0.01),
                    f"{dur/3600:.2f}h out vs {plan['total_secs']/3600:.2f}h in"))
     ch = count_chapters(out)
-    checks.append(("chapters", ch == plan["n"], f"{ch} chapters for {plan['n']} files"))
+    checks.append(("chapters", ch == plan["n_chapters"],
+                   f"{ch} chapters for {plan['n_chapters']} expected"))
     checks.append(("starts cleanly", decodes(out, 0), "first 12s decode"))
     if dur > 30:
         checks.append(("ends cleanly", decodes(out, max(0, dur - 12)),
@@ -675,7 +724,10 @@ def jsonable(job):
     return {"id": job.id, "state": job.state, "pct": round(job.pct, 1),
             "note": job.note, "log": job.log[-40:], "checks": job.checks,
             "name": job.plan["out_name"], "folder": job.plan["folder"],
-            "n": job.plan["n"], "secs": job.plan["total_secs"],
+            "out": job.plan["out"],          # the file itself, for "saved to"
+            "est_bytes": job.plan.get("est_bytes", 0),
+            "n": job.plan["n"], "n_chapters": job.plan["n_chapters"],
+            "secs": job.plan["total_secs"],
             "elapsed": round((job.t1 or time.time()) - job.t0, 1) if job.t0 else 0}
 
 
@@ -702,7 +754,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path.startswith("/static/"):
             p = os.path.join(STATIC, os.path.basename(u.path))
             if os.path.exists(p):
-                ct = {"css": "text/css", "js": "text/javascript"}.get(
+                ct = {"css": "text/css", "js": "text/javascript",
+                      "html": "text/html; charset=utf-8",
+                      "png": "image/png", "svg": "image/svg+xml",
+                      "json": "application/json"}.get(
                     p.rsplit(".", 1)[-1], "application/octet-stream")
                 with open(p, "rb") as fh:
                     return self._send(200, fh.read(), ct)
@@ -806,6 +861,22 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
             return self._send(400, {"error": "bad request body"})
+
+        if u.path == "/api/drop":
+            # What a drop actually was. The page cannot see where a dropped file
+            # lives, so the app hands over the paths the Finder gave it and this
+            # sorts them out: a folder is a book folder, an audio file is a
+            # chapter, anything else is left alone.
+            folders, audio, other = [], [], []
+            for raw in (body.get("paths") or []):
+                path = os.path.abspath(os.path.expanduser(str(raw)))
+                if os.path.isdir(path):
+                    folders.append(path)
+                elif os.path.isfile(path) and os.path.splitext(path)[1].lower() in AUDIO_EXT:
+                    audio.append(path)
+                else:
+                    other.append(path)
+            return self._send(200, {"folders": folders, "audio": audio, "other": other})
 
         if u.path == "/api/start":
             plan, err = build_plan(

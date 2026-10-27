@@ -22,6 +22,17 @@ Folders and files are chosen in the normal Mac way — the **Choose folder** but
 Finder panel, and **Add files** opens the same panel for individual tracks. Nothing is
 browsed by typing a path.
 
+You can also **drop things straight onto the window**. Drag a folder in from the Finder and
+it becomes the book's folder — the one the `.m4b` is written into and the one the originals
+are moved aside inside. Drag loose audio files in and they are added to the chapter list you
+already have. A veil comes up while you are holding them there, so you can see the window is
+ready; a drop of anything that is not audio says so rather than doing nothing.
+
+> A web page is never told where a dropped file lives, so this is caught by the app itself,
+> one layer above the page — that is the only way a dropped folder can become a real folder
+> rather than an upload. It works in `Bookbind.app` and in Housekeeping's Bookbind screen.
+> Open the page in an ordinary browser and dragging gets you a note saying exactly that.
+
 There are two lists, because they answer different questions:
 
 - **1 · The folder** — one folder, and everything in it. This is the usual way: a folder of
@@ -77,6 +88,11 @@ app no arguments — so it says so rather than opening the wrong folder in silen
    order the files should play (it understands that `2.mp3` comes before `10.mp3`, not
    after). By default it **copies** the audio rather than re-recording it, so the sound is
    exactly what you started with and cannot get worse.
+   A panel comes up the moment you press the button and stays for the life of the run:
+   planning, a real progress bar with the time done out of the time total, then checking,
+   then moving the originals aside — and when it lands, **Saved**, with the exact path the
+   book was written to and a **Show in Finder** button. It can be sent to the background
+   and brought back with **Progress** on the job in the list; closing it never stops a run.
 4. **Check.** Before touching your originals it inspects the new file: is it the same
    length, does it have one chapter per file, do the very first and very last seconds
    actually play, did the tags land, is the cover really inside it. If any answer is wrong

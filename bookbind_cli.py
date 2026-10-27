@@ -190,7 +190,7 @@ def main():
 
     if args.dry_run:
         emit({"ok": True, "dry_run": True, "output": plan["out_name"],
-              "folder": plan["folder"], "chapters": plan["n"],
+              "folder": plan["folder"], "chapters": plan["n_chapters"],
               "hours": round(plan["total_secs"] / 3600, 2),
               "seconds": round(plan["total_secs"], 2), "order": plan["order"],
               "lossless": plan["lossless"],
@@ -208,7 +208,7 @@ def main():
 
     result = {"ok": job.state == "done", "state": job.state, "note": job.note,
               "output": plan["out_name"], "path": plan["out"],
-              "chapters": plan["n"], "seconds": round(plan["total_secs"], 2),
+              "chapters": plan["n_chapters"], "seconds": round(plan["total_secs"], 2),
               "moved_to_originals": len(job.manifest and
                                         json.load(open(job.manifest, encoding="utf-8"))["moved"]
                                         or []) if job.manifest else 0,

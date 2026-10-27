@@ -21,6 +21,7 @@ for arch in arm64 x86_64; do
   echo "compiling $arch"
   swiftc -parse-as-library -swift-version 5 -O \
     -sdk "$SDK" -target "${arch}-apple-macos11.0" \
+    -module-cache-path "$TMP/modcache" \
     -o "$TMP/Bookbind-$arch" build/window.swift
 done
 
