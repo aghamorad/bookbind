@@ -30,12 +30,23 @@ jobs:
           cp -R static "$RES/"
           chmod +x Bookbind.app/Contents/MacOS/Bookbind
 
+      # plistlib rather than PlistBuddy: the lightweight job runs on Linux, and a
+      # stamping step that only exists on macOS is how the two zips drift apart.
       - name: Stamp the tag's version into the bundle
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VER="${TAG#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" Bookbind.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Bookbind.app/Contents/Info.plist
+          python3 - "$TAG" <<'PY'
+          import os, plistlib, sys
+          tag = sys.argv[1]
+          path = "Bookbind.app/Contents/Info.plist"
+          with open(path, "rb") as fh:
+              info = plistlib.load(fh)
+          info["CFBundleShortVersionString"] = tag.lstrip("v")
+          info["CFBundleVersion"] = os.environ.get("GITHUB_RUN_NUMBER") or "1"
+          with open(path, "wb") as fh:
+              plistlib.dump(info, fh)
+          print("stamped", info["CFBundleShortVersionString"], info["CFBundleVersion"])
+          PY
 
       - name: Package
         run: |
@@ -53,7 +64,7 @@ jobs:
           test -f /tmp/out/Bookbind.app/Contents/Resources/AppIcon.icns
           # A bundle that says 1.5.0 while carrying 1.5.1 is how a reader ends up
           # unable to tell which copy they have — the fault that made this step exist.
-          test "$(defaults read /tmp/out/Bookbind.app/Contents/Info.plist CFBundleShortVersionString)" = "${TAG#v}"
+          python3 -c "import plistlib,sys; v=plistlib.load(open('/tmp/out/Bookbind.app/Contents/Info.plist','rb'))['CFBundleShortVersionString']; sys.exit(0 if v=='${TAG#v}' else 'bundle says '+v)"
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/app.py').read())"
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/bookbind_cli.py').read())"
           # This runner has no lipo, so read the fat header directly. A window binary
@@ -175,12 +186,23 @@ jobs:
           lipo -archs Bookbind.app/Contents/MacOS/Bookbind
           du -sh Bookbind.app
 
+      # plistlib rather than PlistBuddy: the lightweight job runs on Linux, and a
+      # stamping step that only exists on macOS is how the two zips drift apart.
       - name: Stamp the tag's version into the bundle
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VER="${TAG#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" Bookbind.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Bookbind.app/Contents/Info.plist
+          python3 - "$TAG" <<'PY'
+          import os, plistlib, sys
+          tag = sys.argv[1]
+          path = "Bookbind.app/Contents/Info.plist"
+          with open(path, "rb") as fh:
+              info = plistlib.load(fh)
+          info["CFBundleShortVersionString"] = tag.lstrip("v")
+          info["CFBundleVersion"] = os.environ.get("GITHUB_RUN_NUMBER") or "1"
+          with open(path, "wb") as fh:
+              plistlib.dump(info, fh)
+          print("stamped", info["CFBundleShortVersionString"], info["CFBundleVersion"])
+          PY
 
       - name: Package
         run: |
