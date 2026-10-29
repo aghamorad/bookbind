@@ -12,6 +12,7 @@ import plistlib
 import queue
 import re
 import shutil
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -29,7 +30,7 @@ REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 
 def version():
@@ -170,6 +171,37 @@ def file_row(path, base=None):
 
 # ------------------------------------------------------------- catalogue lookup
 
+def trusting_context():
+    """A TLS context that actually has roots in it.
+
+    A python.org Python on macOS ships with no root certificates until its
+    "Install Certificates.command" has been run, and nothing says so until the
+    first https request: urllib then fails with CERTIFICATE_VERIFY_FAILED —
+    "unable to get local issuer certificate" — which reads like a broken network
+    rather than an empty trust store. That is exactly what the catalogue search
+    showed on this Mac.
+
+    So the bundle is named rather than assumed: certifi's copy when it is
+    installed (it is, beside this interpreter's site-packages), and macOS's own
+    /etc/ssl/cert.pem when it is not. If neither exists the interpreter's default
+    is kept, because a context with no roots at all would fail later and less
+    clearly.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    for path in ("/etc/ssl/cert.pem", "/usr/local/etc/openssl/cert.pem",
+                 "/opt/homebrew/etc/openssl@3/cert.pem"):
+        if os.path.exists(path):
+            try:
+                return ssl.create_default_context(cafile=path)
+            except Exception:
+                continue
+    return ssl.create_default_context()
+
+
 def itunes_search(author, title, limit=12):
     terms = [t for t in (author, title) if t]
     if not terms:
@@ -178,7 +210,7 @@ def itunes_search(author, title, limit=12):
                                 "entity": "audiobook", "limit": limit, "country": "us"})
     req = urllib.request.Request("https://itunes.apple.com/search?" + q,
                                  headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=20, context=trusting_context()) as r:
         data = json.load(r)
     out = []
     for c in data.get("results", []):
@@ -197,7 +229,7 @@ def itunes_search(author, title, limit=12):
 
 def fetch_cover(url, dest):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30, context=trusting_context()) as r:
         blob = r.read()
     tmp = dest + ".dl"
     with open(tmp, "wb") as fh:
@@ -845,7 +877,12 @@ class Handler(BaseHTTPRequestHandler):
                 res = itunes_search((q.get("author") or [""])[0], (q.get("title") or [""])[0])
                 return self._send(200, {"results": res})
             except Exception as e:
-                return self._send(200, {"results": [], "error": str(e)})
+                # The raw exception is kept, because "which failure" matters; the
+                # sentence in front of it says what to do about the common one.
+                return self._send(200, {"results": [], "error":
+                    "The catalogue could not be reached (%s). Filling the fields "
+                    "by hand works, and so does dropping the cover image in."
+                    % e})
 
         if u.path == "/api/jobs":
             with JOBS_LOCK:
