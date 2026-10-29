@@ -1,3 +1,24 @@
+## The catalogue search works again
+
+**Search online catalogue** was failing on this Mac with
+
+    CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate
+
+which reads like a broken connection and is not one. A python.org Python on macOS
+ships with **no root certificates** until its `Install Certificates.command` has
+been run, and Python says nothing about that until the first https request: every
+TLS connection then fails verification because there is nothing to verify against.
+Bookbind's own catalogue search was the first thing on this machine to make one.
+
+The trust store is now chosen rather than assumed — `certifi`'s bundle when it is
+installed, macOS's own `/etc/ssl/cert.pem` when it is not — so the search works on
+any Mac that has either, and continues to work on a Python that has been set up
+properly. The failure message, if it ever comes back, now says the catalogue could
+not be reached and that both fields can be filled by hand.
+
+Verified on this Mac: `Greg Grandin` / `Empire's Workshop` returns the audiobook
+from the iTunes catalogue, cover included.
+
 ## Drop a folder on it, and watch the run finish
 
 Two things are new, and both are about not having to guess what Bookbind is doing.
