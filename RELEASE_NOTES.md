@@ -19,6 +19,14 @@ not be reached and that both fields can be filled by hand.
 Verified on this Mac: `Greg Grandin` / `Empire's Workshop` returns the audiobook
 from the iTunes catalogue, cover included.
 
+### The bundle now says which version it is
+
+Every bundled release so far reported **1.5.0** in its Info.plist, whatever it
+actually carried, because the version was written by hand in the repository and the
+release workflow copied that file as-is. The workflow now stamps the tag's version
+into the bundle before it packages it, and the download check fails if the zip's
+Info.plist disagrees with its tag.
+
 ## Drop a folder on it, and watch the run finish
 
 Two things are new, and both are about not having to guess what Bookbind is doing.

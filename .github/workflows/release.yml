@@ -30,6 +30,13 @@ jobs:
           cp -R static "$RES/"
           chmod +x Bookbind.app/Contents/MacOS/Bookbind
 
+      - name: Stamp the tag's version into the bundle
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" Bookbind.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Bookbind.app/Contents/Info.plist
+
       - name: Package
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
@@ -38,11 +45,15 @@ jobs:
 
       - name: Check the artifact as a downloader receives it
         run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           unzip -q dist/*.zip -d /tmp/out
           test -x /tmp/out/Bookbind.app/Contents/MacOS/Bookbind
           test -f /tmp/out/Bookbind.app/Contents/Resources/app.py
           test -f /tmp/out/Bookbind.app/Contents/Resources/static/index.html
           test -f /tmp/out/Bookbind.app/Contents/Resources/AppIcon.icns
+          # A bundle that says 1.5.0 while carrying 1.5.1 is how a reader ends up
+          # unable to tell which copy they have — the fault that made this step exist.
+          test "$(defaults read /tmp/out/Bookbind.app/Contents/Info.plist CFBundleShortVersionString)" = "${TAG#v}"
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/app.py').read())"
           python3 -c "import ast;ast.parse(open('/tmp/out/Bookbind.app/Contents/Resources/bookbind_cli.py').read())"
           # This runner has no lipo, so read the fat header directly. A window binary
@@ -163,6 +174,13 @@ jobs:
           file "$RES/bin/BookbindServer"
           lipo -archs Bookbind.app/Contents/MacOS/Bookbind
           du -sh Bookbind.app
+
+      - name: Stamp the tag's version into the bundle
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" Bookbind.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" Bookbind.app/Contents/Info.plist
 
       - name: Package
         run: |
