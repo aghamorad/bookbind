@@ -1,3 +1,19 @@
+## 1.5.2 — progress stays live while a bind is running
+
+The job worker held the queue's lock for the whole encode. The page asks the job
+list for an update once a second so it can move the progress bar, and that
+question waited behind ffmpeg until the encode ended. The screen therefore sat
+at "Waiting for the engine", the stage never changed, and Stop looked broken.
+
+The lock now guards the job-table claim only. Work runs outside it, and
+`task_done()` sits in a `finally` block so a failed job cannot leave the queue
+unbalanced. Measured with the same three 150-second tracks: engine 1.5.1 held
+`/api/jobs` for 4.2 seconds and never showed the encoding stage; 1.5.2 answered
+the same poll in 1–2 ms and reported `encoding` while ffmpeg ran. The finished
+7 MB M4B has all three chapter marks, the title, artist and album tags.
+
+Housekeeping carries this engine, so its version now needs to be 1.5.2 as well.
+
 ## The catalogue search works again
 
 **Search online catalogue** was failing on this Mac with
