@@ -12,3 +12,6 @@ build/AppIcon.iconset/
 # PyInstaller working files
 *.spec
 out/
+
+# the prebuilt engine and ffmpeg are placed here, never committed
+bin/

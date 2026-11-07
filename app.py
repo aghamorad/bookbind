@@ -30,7 +30,7 @@ REPO = "aghamorad/bookbind"
 
 # What a bare checkout reports. A released .app carries an Info.plist and that
 # number wins, because it is the one this copy was actually cut at.
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 
 
 def version():
@@ -711,10 +711,16 @@ def worker():
         job = QUEUE.get()
         if job is None:
             return
-        with JOBS_LOCK:
-            if job.state == "queued":
+        try:
+            # The lock guards the job table, not the work. Holding it for the
+            # whole encode made every /api/jobs poll wait behind ffmpeg, so the
+            # page sat on "Waiting for the engine" for the length of the run.
+            with JOBS_LOCK:
+                queued = job.state == "queued"
+            if queued:
                 run_job(job)
-        QUEUE.task_done()
+        finally:
+            QUEUE.task_done()
 
 
 for _ in range(WORKERS):
@@ -797,6 +803,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/version":
             return self._send(200, {"version": version(), "repo": REPO})
+
+        if u.path == "/api/health":
+            # What the app asks before it trusts a server it did not start. An
+            # old copy answering on the port would otherwise be adopted and the
+            # fixed engine would never run.
+            return self._send(200, {"ok": True, "version": version(),
+                                    "pid": os.getpid(),
+                                    "parent": os.environ.get("BOOKBIND_PARENT"),
+                                    "workers": WORKERS,
+                                    "jobs": len(JOBS)})
 
         if u.path == "/api/home":
             return self._send(200, {"home": os.path.expanduser("~"),
