@@ -129,8 +129,8 @@ jobs:
           - runner: macos-15
             arch: silicon
             want: arm64
-            ffmpeg_url: https://www.osxexperts.net/ffmpeg9arm.zip
-            ffprobe_url: https://www.osxexperts.net/ffprobe9arm.zip
+            ffmpeg_url: https://www.osxexperts.net/ffmpeg91arm.zip
+            ffprobe_url: https://www.osxexperts.net/ffprobe91arm.zip
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
